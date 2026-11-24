@@ -288,7 +288,9 @@ the useful part.
 
 ### Web surface
 
-22. **The public site is the `web/` UI preview, and only that.** The Rust artefact
+22. **The public site is the `web/` app, and only that:** `/` is the landing page that
+    explains the pilot (gate copy, chain, the five metric bands, what the tool refuses)
+    and links into the workspace preview at `/triage`. The same app is a UI preview. The Rust artefact
     generator, the committed pages, `vercel.json` at the root and the drift check were
     removed together; what replaced them is a separate TanStack Start app that Vercel
     builds from `web/`. Do not reintroduce a generator, a `site/` directory or
@@ -414,11 +416,11 @@ rm -rf /tmp/pilot && ./target/release/ledger demo seed --data /tmp/pilot --force
 Two seeds in two directories must produce the same fingerprint and log head; the test
 suite asserts it. There is no build step to regenerate and nothing to commit.
 
-### Working on the `web/` preview
+### Working on the `web/` site
 
 ```bash
 cd web && bun install --frozen-lockfile
-bun run dev                        # local dev
+bun run dev                        # landing at /, workspace at /triage
 bun run test                       # vitest (5 tests)
 NITRO_PRESET=vercel bun run build  # what Vercel runs; writes .vercel/output
 ```

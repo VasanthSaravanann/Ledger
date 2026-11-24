@@ -3,14 +3,14 @@ import { Link, useRouterState } from '@tanstack/react-router';
 import { Layers3, LayoutDashboard, Upload, Send, ShieldCheck, ScrollText, ChevronDown, ChevronRight, LockKeyhole, Menu, X, CircleHelp, ArrowUpRight, BriefcaseBusiness } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLedger } from './ledger-context';
-const nav = [{ to: '/', label: 'Triage workspace', icon: LayoutDashboard }, { to: '/import', label: 'Import candidates', icon: Upload }, { to: '/dispatch', label: 'Dispatch queue', icon: Send }, { to: '/governance', label: 'Governance', icon: ShieldCheck }, { to: '/audit', label: 'Audit trail', icon: ScrollText }] as const;
+const nav = [{ to: '/triage', label: 'Triage workspace', icon: LayoutDashboard }, { to: '/import', label: 'Import candidates', icon: Upload }, { to: '/dispatch', label: 'Dispatch queue', icon: Send }, { to: '/governance', label: 'Governance', icon: ShieldCheck }, { to: '/audit', label: 'Audit trail', icon: ScrollText }] as const;
 export function Status({ value }: { value: string }) { return <span className={`status ${value}`}><span className="text-[8px]">●</span>{value}</span>; }
 export function LedgerLayout({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: s => s.location.pathname }); const [open, setOpen] = useState(false); const { candidates } = useLedger();
   const current = nav.find(n => n.to === path)?.label ?? 'Workspace';
   return <div className="app-shell">
     {open && <div className="drawer-backdrop md:hidden" onClick={() => setOpen(false)} />}
-    <aside className={`sidebar ${open ? 'mobile-open' : ''}`}><Link to="/" className="brand"><span className="brand-symbol"><Layers3 size={21}/></span>ledger<span className="text-primary">.</span></Link>
+    <aside className={`sidebar ${open ? 'mobile-open' : ''}`}><Link to="/" className="brand" title="Ledger"><span className="brand-symbol"><Layers3 size={21}/></span>ledger<span className="text-primary">.</span></Link>
       <div className="workspace-chip"><BriefcaseBusiness size={17} className="text-muted-foreground"/><div className="min-w-0 flex-1"><div className="text-xs font-semibold">People Operations</div><div className="text-[10px] text-muted-foreground mt-1">Recruitment workspace</div></div><LockKeyhole size={12} className="text-muted-foreground"/></div>
       <div className="nav-label">Workspace</div><nav>{nav.map(n => <Link key={n.to} to={n.to} onClick={() => setOpen(false)} className={`nav-link ${path === n.to ? 'active' : ''}`}><n.icon/>{n.label}{n.to === '/dispatch' && <span className="nav-count">{candidates.filter(c => c.delivery === 'Queued').length}</span>}</Link>)}</nav>
       <div className="mt-7 mx-6 border-t border-border pt-5"><div className="flex items-center gap-2 text-xs font-medium"><LockKeyhole size={14} className="text-muted-foreground"/>Single-operator workspace</div><div className="text-[11px] text-muted-foreground mt-2 leading-relaxed">Session-bound access</div></div>

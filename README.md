@@ -317,9 +317,11 @@ enforced on creation regardless of the process umask. `tests/` asserts this.
 
 ### Workspace preview (`web/`)
 
-`web/` is the recruiter workspace as a browser app: a TanStack Start + React 19
-single-page workspace built in [Lovable](https://lovable.dev) (project
-`f0481c24-dcfa-4ea5-9b31-1d0a285832ee`). It is deployed to Vercel as the project's
+`web/` is the public face of the pilot: a landing page at `/` that explains what the
+tool is, how a rejection is recorded and why the pilot exists, and the recruiter
+workspace itself at `/triage`, `/import`, `/dispatch`, `/governance` and `/audit`.
+TanStack Start + React 19, built in [Lovable](https://lovable.dev) (project
+`f0481c24-dcfa-4ea5-9b31-1d0a285832ee`), deployed to Vercel as the project's
 production site (`ledger-pilot`, domain `ledger-pilot-chi.vercel.app`).
 
 **It is a UI preview, not the ledger.** The roster is a 48-row session fixture, every
@@ -331,7 +333,7 @@ remains the only thing that records a real disposition. Do not present browser-s
 ```bash
 cd web
 bun install --frozen-lockfile
-bun run dev                      # http://localhost:5173
+bun run dev                      # http://localhost:5173 — landing, then /triage
 bun run test                     # vitest: 5 tests
 NITRO_PRESET=vercel bun run build  # writes .vercel/output (Build Output API v3)
 ```

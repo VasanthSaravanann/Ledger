@@ -14,6 +14,7 @@ import { Route as AuditRouteImport } from './routes/audit'
 import { Route as DispatchRouteImport } from './routes/dispatch'
 import { Route as GovernanceRouteImport } from './routes/governance'
 import { Route as ImportRouteImport } from './routes/import'
+import { Route as TriageRouteImport } from './routes/triage'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +41,11 @@ const ImportRoute = ImportRouteImport.update({
   path: '/import',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TriageRoute = TriageRouteImport.update({
+  id: '/triage',
+  path: '/triage',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/dispatch': typeof DispatchRoute
   '/governance': typeof GovernanceRoute
   '/import': typeof ImportRoute
+  '/triage': typeof TriageRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/dispatch': typeof DispatchRoute
   '/governance': typeof GovernanceRoute
   '/import': typeof ImportRoute
+  '/triage': typeof TriageRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +70,22 @@ export interface FileRoutesById {
   '/dispatch': typeof DispatchRoute
   '/governance': typeof GovernanceRoute
   '/import': typeof ImportRoute
+  '/triage': typeof TriageRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/audit' | '/dispatch' | '/governance' | '/import'
+  fullPaths:
+    '/' | '/audit' | '/dispatch' | '/governance' | '/import' | '/triage'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/audit' | '/dispatch' | '/governance' | '/import'
-  id: '__root__' | '/' | '/audit' | '/dispatch' | '/governance' | '/import'
+  to: '/' | '/audit' | '/dispatch' | '/governance' | '/import' | '/triage'
+  id:
+    | '__root__'
+    | '/'
+    | '/audit'
+    | '/dispatch'
+    | '/governance'
+    | '/import'
+    | '/triage'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,6 +94,7 @@ export interface RootRouteChildren {
   DispatchRoute: typeof DispatchRoute
   GovernanceRoute: typeof GovernanceRoute
   ImportRoute: typeof ImportRoute
+  TriageRoute: typeof TriageRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -116,6 +134,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ImportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/triage': {
+      id: '/triage'
+      path: '/triage'
+      fullPath: '/triage'
+      preLoaderRoute: typeof TriageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -125,6 +150,7 @@ const rootRouteChildren: RootRouteChildren = {
   DispatchRoute: DispatchRoute,
   GovernanceRoute: GovernanceRoute,
   ImportRoute: ImportRoute,
+  TriageRoute: TriageRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
