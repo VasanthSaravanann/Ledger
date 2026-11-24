@@ -822,8 +822,13 @@
   color: var(--foreground);
 }
 
+/*
+ * No `color: inherit` here: at 0,1,1 it beat the button's `text-primary-foreground`
+ * utility (0,1,0) and painted near-black labels on the indigo buttons. Tailwind's
+ * preflight already inherits anchor colour at element specificity, which leaves the
+ * component's own colour in charge.
+ */
 .lp a {
-  color: inherit;
   text-decoration: none;
 }
 
