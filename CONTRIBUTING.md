@@ -80,3 +80,7 @@ fixed checkout. When you change the pages, bump it in the same commit:
 LEDGER_BUMP_PROVENANCE=1 ./scripts/build-site.sh
 git add site/ && git commit -m "regenerate site"
 ```
+
+Vercel serves the committed pages through the GitHub integration; there is no
+deploy-side Rust build. CI's drift check is what guarantees the deployed bytes are
+the reviewed bytes.

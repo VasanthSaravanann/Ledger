@@ -244,9 +244,13 @@ enforced on creation regardless of the process umask. `tests/` asserts this.
 `sitemap.xml`. Every generated page carries build provenance: commit SHA, the
 commit timestamp used as generation time, and the fixture fingerprint. Two runs of
 `scripts/build-site.sh` on one commit are byte-identical, which is what makes the
-CI drift check meaningful. Deployment runs from `.github/workflows/deploy.yml`
-(generate → drift check → `vercel deploy --prebuilt`), because Vercel's build image
-has no Rust toolchain.
+CI drift check meaningful.
+
+Deployment uses the existing Vercel↔GitHub integration on `main`: Vercel's build
+image has no Rust toolchain, so it serves the committed pages that
+`scripts/build-site.sh` produced, and CI fails if those pages differ from a fresh
+generation. That keeps "what was reviewed" and "what is deployed" the same bytes
+without building Rust at deploy time.
 
 ## Supported platforms
 
