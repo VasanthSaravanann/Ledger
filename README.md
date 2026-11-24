@@ -334,7 +334,8 @@ remains the only thing that records a real disposition. Do not present browser-s
 cd web
 bun install --frozen-lockfile
 bun run dev                      # http://localhost:5173 — landing, then /triage
-bun run test                     # vitest: 5 tests
+bun run lint                     # eslint + prettier (ignores build output)
+bun run test                     # vitest: 6 tests
 NITRO_PRESET=vercel bun run build  # writes .vercel/output (Build Output API v3)
 ```
 

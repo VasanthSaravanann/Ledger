@@ -44,6 +44,7 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
+      - run: bun run lint
       - run: bun run test
       # Same build Vercel runs: without the preset it emits a Cloudflare worker.
       - run: bun run build

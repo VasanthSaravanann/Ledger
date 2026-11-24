@@ -83,9 +83,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Ledger — every rejection leaves a record" },
-      { name: "description", content: "A manual candidate-feedback pilot: a reason a person recorded, copy Legal signed, and an append-only log that proves the exact text sent." },
+      {
+        name: "description",
+        content:
+          "A manual candidate-feedback pilot: a reason a person recorded, copy Legal signed, and an append-only log that proves the exact text sent.",
+      },
       { property: "og:title", content: "Ledger — every rejection leaves a record" },
-      { property: "og:description", content: "A manual candidate-feedback pilot: a reason a person recorded, copy Legal signed, and an append-only log that proves the exact text sent." },
+      {
+        property: "og:description",
+        content:
+          "A manual candidate-feedback pilot: a reason a person recorded, copy Legal signed, and an append-only log that proves the exact text sent.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -123,7 +131,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <LedgerProvider><Outlet /></LedgerProvider>
+      <LedgerProvider>
+        <Outlet />
+      </LedgerProvider>
     </QueryClientProvider>
   );
 }

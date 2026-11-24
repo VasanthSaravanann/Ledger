@@ -1,3 +1,22 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { TriageWorkspace } from '@/components/triage-workspace';
-export const Route = createFileRoute('/triage')({ head: () => ({ meta: [{ title: 'Triage workspace | ledger' }, { name: 'description', content: 'Review candidates, record decisions and manage the recruitment disposition queue in ledger.' }, { property: 'og:title', content: 'Triage workspace | ledger' }, { property: 'og:description', content: 'A thoughtful decision. A defensible record. Every candidate accounted for.' }, { property: 'og:type', content: 'website' }, { name: 'twitter:card', content: 'summary_large_image' }] }), component: TriageWorkspace });
+import { createFileRoute } from "@tanstack/react-router";
+import { TriageWorkspace } from "@/components/triage-workspace";
+export const Route = createFileRoute("/triage")({
+  head: () => ({
+    meta: [
+      { title: "Triage workspace | ledger" },
+      {
+        name: "description",
+        content:
+          "Review candidates, record decisions and manage the recruitment disposition queue in ledger.",
+      },
+      { property: "og:title", content: "Triage workspace | ledger" },
+      {
+        property: "og:description",
+        content: "A thoughtful decision. A defensible record. Every candidate accounted for.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: TriageWorkspace,
+});

@@ -421,7 +421,8 @@ suite asserts it. There is no build step to regenerate and nothing to commit.
 ```bash
 cd web && bun install --frozen-lockfile
 bun run dev                        # landing at /, workspace at /triage
-bun run test                       # vitest (5 tests)
+bun run lint                       # eslint + prettier; ignores .vercel/output or it hangs
+bun run test                       # vitest (6 tests)
 NITRO_PRESET=vercel bun run build  # what Vercel runs; writes .vercel/output
 ```
 
