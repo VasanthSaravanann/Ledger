@@ -8,6 +8,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
+use std::process::ChildStdout;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,10 @@ use ledger::store::Store;
 
 struct Server {
     child: Child,
+    /// Kept open on purpose: closing the pipe after the banner makes the server's
+    /// next `println!` fail with EPIPE, which panics the server thread and resets
+    /// the client connection. macOS tolerates the write; Linux does not.
+    _stdout: BufReader<ChildStdout>,
     port: u16,
     token: String,
     dir: PathBuf,
@@ -56,10 +61,10 @@ fn start(tag: &str, operator: &str, port: u16) -> Server {
         .spawn()
         .expect("spawn ledger ui");
 
-    let stdout = child.stdout.take().expect("stdout");
-    let mut lines = BufReader::new(stdout).lines();
-    let first = lines.next().expect("banner").expect("read banner");
-    let token = first
+    let mut stdout = BufReader::new(child.stdout.take().expect("stdout"));
+    let mut banner = String::new();
+    stdout.read_line(&mut banner).expect("read banner");
+    let token = banner
         .split("token=")
         .nth(1)
         .expect("token in banner")
@@ -76,6 +81,7 @@ fn start(tag: &str, operator: &str, port: u16) -> Server {
 
     Server {
         child,
+        _stdout: stdout,
         port,
         token,
         dir,
