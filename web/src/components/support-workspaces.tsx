@@ -173,6 +173,17 @@ export function ImportWorkspace() {
             <Upload />
             {file ? "Choose another file" : "Choose CSV file"}
           </Button>
+          <p className="text-[11px] text-muted-foreground mt-4">
+            No export handy?{" "}
+            <a
+              className="underline underline-offset-2 hover:text-foreground"
+              href="/sample-ats.csv"
+              download
+            >
+              Download an eight-row sample CSV
+            </a>{" "}
+            — two rows fall outside the initial screen and are dropped on import.
+          </p>
           <input
             ref={input}
             type="file"

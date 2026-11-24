@@ -479,9 +479,27 @@ export function LandingPage() {
                     <a href="https://github.com/VasanthSaravanann/Ledger">Read the source</a>
                   </Button>
                 </div>
+                <ol className="lp-try">
+                  <li>
+                    Open <strong>Triage</strong>, click a candidate, and record a disposition. The
+                    queue and the dispatch count change.
+                  </li>
+                  <li>
+                    Go to <strong>Dispatch</strong> to see the email it queued, then{" "}
+                    <strong>Governance</strong> and <strong>Audit</strong> to see what the workspace
+                    says about itself.
+                  </li>
+                  <li>
+                    Or open <strong>Import</strong> and drop the{" "}
+                    <a href="/sample-ats.csv" download>
+                      sample CSV
+                    </a>
+                    ; two of its eight rows are excluded for being past the initial screen.
+                  </li>
+                </ol>
                 <p className="lp-cta-note">
                   It is a preview; the ledger is the Rust command line tool, and it is what records
-                  a real disposition.
+                  a real disposition. Nothing here is saved: reload and the roster resets.
                 </p>
               </div>
               <Plate

@@ -1365,6 +1365,34 @@
   margin-top: 22px;
 }
 
+.lp-try {
+  margin-top: 18px;
+  padding-left: 1.15em;
+  display: grid;
+  gap: 8px;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--lp-soft);
+  max-width: 34rem;
+  list-style: decimal;
+}
+
+.lp-try li::marker {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.lp-try strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.lp-try a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .lp-cta-note {
   margin-top: 16px;
   font-size: 0.75rem;

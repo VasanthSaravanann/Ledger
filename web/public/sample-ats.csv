@@ -1,0 +1,9 @@
+APPLICATION_ID,FIRST_NAME,EMAIL,STAGE,KO_ANSWER_01,KO_ANSWER_02,KO_ANSWER_03,KO_ANSWER_04,KO_ANSWER_05
+APP-7001,Priya Raman,priya.raman@example.com,InitialScreen,yes,yes,yes,yes,yes
+APP-7002,Tom Alvarez,tom.alvarez@example.com,InitialScreen,yes,no,yes,yes,yes
+APP-7003,Ines Costa,ines.costa@example.com,InitialScreen,no,yes,yes,yes,yes
+APP-7004,Ben Okafor,ben.okafor@example.com,InitialScreen,yes,yes,yes,no,yes
+APP-7005,Sara Lindqvist,sara.lindqvist@example.com,InitialScreen,yes,yes,yes,yes,no
+APP-7006,Wei Chen,wei.chen@example.com,InitialScreen,yes,yes,yes,yes,yes
+APP-7007,Marco Rossi,marco.rossi@example.com,Interview,yes,yes,yes,yes,yes
+APP-7008,Hana Sato,hana.sato@example.com,Offer,yes,yes,yes,yes,yes
