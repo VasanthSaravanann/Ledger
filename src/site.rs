@@ -51,12 +51,13 @@ pub struct ExportReport {
 }
 
 /// The page routes, in navigation order.
-pub const ROUTES: [(&str, &str); 7] = [
+pub const ROUTES: [(&str, &str); 8] = [
     ("emails", "Candidate emails"),
     ("gates", "Gate library"),
     ("audit", "Hash-chain audit"),
     ("comparative", "Comparative paragraph"),
     ("demo", "Recorded run"),
+    ("ui", "Recruiter workspace"),
     ("format", "Format spec"),
     ("threat-model", "Threat model"),
 ];
@@ -174,6 +175,13 @@ pub fn export_html(store: &Store, out_dir: impl AsRef<Path>) -> Result<ExportRep
     })?;
     pages.push(demo);
 
+    let workspace = out_dir.join("ui.html");
+    fs::write(&workspace, ui_page()).map_err(|source| Error::Io {
+        path: workspace.clone(),
+        source,
+    })?;
+    pages.push(workspace);
+
     let format = out_dir.join("format.html");
     fs::write(
         &format,
@@ -256,6 +264,7 @@ fn sitemap() -> String {
         "audit",
         "comparative",
         "demo",
+        "ui",
         "format",
         "threat-model",
         "verify",
@@ -323,6 +332,60 @@ fn verifier_page() -> Result<String> {
     ))
 }
 
+/// The recruiter workspace page. Hand-written copy: the server's own output is a
+/// live session, not a build artefact, so there is nothing for the generator to
+/// capture beyond this description.
+fn ui_page() -> String {
+    let body = "<h1>Recruiter workspace</h1>\
+         <p class=\"lede\">A local, loopback-only web workspace over the same core: \
+         <code>ledger ui --operator &lt;name&gt; --port 8420</code> serves \
+         <code>127.0.0.1</code> and nothing else. It is behind the optional \
+         <code>ui</code> feature, so the default build stays the offline CLI.</p>\
+         <pre>cargo build --release --features ui\n\
+ledger --data pilot --operator rec-rui ui --port 8420\n\
+# http://127.0.0.1:8420/?token=&lt;32-byte hex&gt;</pre>\
+         <h2>Routes</h2>\
+         <table><caption>Role is enforced per request, not at launch.</caption>\
+         <thead><tr><th>Route</th><th>Method</th><th>Role</th><th>Purpose</th></tr></thead><tbody>\
+         <tr><td class=\"mono\">/</td><td>GET</td><td>any signed-in</td><td>Triage table and four KPI cards</td></tr>\
+         <tr><td class=\"mono\">/api/preview</td><td>POST</td><td>any signed-in</td><td>Render the email for a disposition</td></tr>\
+         <tr><td class=\"mono\">/api/dispose</td><td>POST</td><td>coordinator</td><td>Capture one disposition</td></tr>\
+         <tr><td class=\"mono\">/api/dispose/batch</td><td>POST</td><td>coordinator</td><td>Atomic batch, including corrections</td></tr>\
+         <tr><td class=\"mono\">/governance</td><td>GET</td><td>any signed-in</td><td>Seven artefact verdicts and the checklist</td></tr>\
+         <tr><td class=\"mono\">/audit</td><td>GET</td><td>any signed-in</td><td>Chain check and operator activity</td></tr>\
+         </tbody></table>\
+         <h2>How it stays safe</h2><ul>\
+         <li><strong>One operator per process.</strong> The session is bound at launch from \
+         <code>--operator</code>; identity is a name plus a <code>0600</code> keyfile, not an \
+         account, so switching operators is a relaunch.</li>\
+         <li><strong>Token, then cookie.</strong> The first <code>GET /?token=</code> consumes a \
+         one-time token and sets <code>HttpOnly; SameSite=Strict</code> \
+         <code>ledger_session</code>, then redirects. Everything else needs the cookie \
+         (<code>401</code>).</li>\
+         <li><strong>RBAC per request.</strong> Mutations consult <code>Role::permits</code>; an \
+         auditor gets <code>403</code> on <code>/api/dispose*</code> and <code>200</code> on \
+         <code>/audit</code>.</li>\
+         <li><strong>The workspace lock is the boundary.</strong> Writes take \
+         <code>Store::lock</code> (<code>flock</code>) inside <code>spawn_blocking</code>; \
+         contention is <code>409</code> with the holder. Reads never block on a CLI run.</li>\
+         <li><strong>No assets on the wire.</strong> CSS and JS are embedded with \
+         <code>include_str!</code>, system fonts only, no CDN, no build step — it works \
+         air-gapped.</li>\
+         <li><strong>Bulk capture is one write.</strong> A batch is validated against the log \
+         plus the batch already staged, then lands in a single <code>append_batch</code>; a \
+         rejected batch writes zero bytes.</li>\
+         </ul>\
+         <h2>Not wired into the UI yet</h2><ul>\
+         <li>The ATS import column mapper (needs a mapping-profile model in core first).</li>\
+         <li>The <code>.eml</code> draft and zip download routes.</li>\
+         <li>One-click re-approval, the snapshot button, and delivery confirmation.</li>\
+         </ul>\
+         <p class=\"lede\">Everything above is an honest list: the workspace covers triage, \
+         capture and audit; the remaining screens reuse handlers that already exist in the \
+         CLI.</p>";
+    shell("Recruiter workspace", "ui", body)
+}
+
 /// Publishes the CLI surface captured at build time.
 fn cli_page(out_dir: &Path) -> Result<String> {
     let path = out_dir.join("cli.txt");
@@ -335,7 +398,10 @@ fn cli_page(out_dir: &Path) -> Result<String> {
         &format!(
             "<h1>CLI reference</h1>\
              <p class=\"lede\">Every command, flag, exit code and JSON contract, captured from \
-             the binary during this build.</p><pre>{}</pre>",
+             the binary during this build.</p>\
+             <p class=\"lede\"><code>ledger ui</code> is not listed below: it is behind the \
+             optional <code>ui</code> feature, and this capture is of the default build. See the \
+             <a href=\"/ui\">recruiter workspace</a>.</p><pre>{}</pre>",
             escape(&help)
         ),
     ))
