@@ -86,11 +86,11 @@ export function LedgerLayout({ children }: { children: ReactNode }) {
           </div>
           <div className="person">
             <div className="avatar" data-tone="1">
-              VS
+              J
             </div>
             <div>
-              <div className="text-xs font-semibold">Vasanth S</div>
-              <div className="text-[10px] text-muted-foreground mt-1">Coordinator preview</div>
+              <div className="text-xs font-semibold">John</div>
+              <div className="text-[10px] text-muted-foreground mt-1">Coordinator</div>
             </div>
             <LockKeyhole size={13} className="ml-auto text-muted-foreground" />
           </div>

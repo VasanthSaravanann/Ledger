@@ -476,7 +476,7 @@ export function GovernanceWorkspace() {
         <div className="info-band">
           <LockKeyhole size={17} className="shrink-0 mt-0.5" />
           <span>
-            Coordinator preview · Artefact signing requires an Approver session in the connected
+            Coordinator session · Artefact signing requires an Approver session in the connected
             Rust ledger.
           </span>
         </div>
@@ -590,7 +590,7 @@ export function AuditWorkspace() {
               <div>
                 <p className="text-sm font-medium">{event}</p>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Vasanth S · Coordinator preview
+                  John · Recruitment coordinator
                 </p>
               </div>
             </div>
