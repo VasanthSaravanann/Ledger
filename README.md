@@ -30,6 +30,13 @@ claim is "enforced in code and logs", not "unrepresentable".
 | 4.3 Routing decision | `review.rs` — the six V2 consequences, applied in order |
 | Task sheet | `checklist.rs` — the thirteen tasks, signed by a named person |
 
+## Working on this repo
+
+[`SKILL.md`](SKILL.md) is the project skill: the seven specs compressed, the
+decisions ledger (and why), the invariants with the tests that enforce them, the
+failure modes that actually bit, and the current open work. Read it before changing
+anything non-trivial.
+
 ## Quick start
 
 ```bash
