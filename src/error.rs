@@ -155,6 +155,32 @@ pub enum Error {
     #[error("application {0} is not in the imported roster")]
     UnknownApplication(ApplicationId),
 
+    /// A log ends mid-line, which means the writer died during an append.
+    #[error(
+        "log {path} ends with a partial line ({bytes} byte(s) after the last newline); run \
+         `ledger log quarantine --reason <note>` to preserve it, or restore from backup"
+    )]
+    TornWrite {
+        /// The file with the partial line.
+        path: PathBuf,
+        /// How many bytes follow the last newline.
+        bytes: usize,
+    },
+
+    /// Another ledger process holds the workspace lock.
+    #[error("workspace is locked by {holder}")]
+    Locked {
+        /// The PID and timestamp written by the holder.
+        holder: String,
+    },
+
+    /// Dispatch committed nothing because every attempt was blocked.
+    #[error("{count} attempt(s) were blocked by the circuit-breakers; nothing was sent")]
+    Blocked {
+        /// How many attempts were blocked.
+        count: usize,
+    },
+
     /// A stored append-only log failed its integrity check.
     #[error("log {path} is corrupt at entry {seq}: {reason}")]
     LogCorrupt {
@@ -189,6 +215,41 @@ pub enum Error {
 }
 
 impl Error {
+    /// The documented process exit code for this failure.
+    ///
+    /// `0` success, `2` circuit-breaker block, `3` invalid input or state,
+    /// `4` workspace lock contention, `1` everything else.
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            Self::Blocked { .. } => 2,
+            Self::Locked { .. } => 4,
+            Self::Invalid { .. }
+            | Self::UnknownRequisition(_)
+            | Self::MissingGateCopy(_)
+            | Self::MissingFact { .. }
+            | Self::GateUnavailable { .. }
+            | Self::UnknownDisposition(_)
+            | Self::AlreadySuperseded(_)
+            | Self::SupersedeMismatch { .. }
+            | Self::ComparativeRejected { .. }
+            | Self::GateNotInRequisition { .. }
+            | Self::DisallowedAnswer { .. }
+            | Self::AlreadySignedOff { .. }
+            | Self::RequisitionNotReady { .. }
+            | Self::TemplatesNotApproved
+            | Self::PlaybookNotApproved
+            | Self::MissingTemplate(_)
+            | Self::UnknownSlot(_)
+            | Self::UnclosedSlot(_)
+            | Self::MissingSlotValue { .. }
+            | Self::DuplicateApplication(_)
+            | Self::UnknownApplication(_)
+            | Self::TornWrite { .. }
+            | Self::UnknownPlanTask(_) => 3,
+            _ => 1,
+        }
+    }
+
     /// Builds a validation error.
     pub fn invalid(kind: &'static str, reason: impl Into<String>) -> Self {
         Self::Invalid {

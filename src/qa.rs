@@ -110,7 +110,9 @@ impl QaLog {
 pub fn requires_second_person(record: &DispositionRecord) -> bool {
     match &record.form.disposition {
         Disposition::Gate { .. } => true,
-        Disposition::Field | Disposition::Admin { .. } => sampled(&record.form.application_id),
+        Disposition::Field | Disposition::Admin { .. } => {
+            sampled(&record.form.requisition, &record.form.application_id)
+        }
     }
 }
 
@@ -123,27 +125,90 @@ pub fn scope_for(disposition: &Disposition) -> QaScope {
 }
 
 /// Whether this application falls in the deterministic 10% sample.
-pub fn sampled(application: &ApplicationId) -> bool {
-    let digest = sha256_hex(application.as_str().as_bytes());
-    let first = u8::from_str_radix(&digest[0..2], 16).unwrap_or(0xff);
-    first % 10 == 0
+///
+/// The sample is keyed on `REQ_ID` and `APPLICATION_ID` only — never on CSV
+/// column order or any other field — so adding a column to the ATS export cannot
+/// change which rows the coordinator must check. Both values are length-prefixed
+/// before hashing so that no pair of ids can collide by concatenation.
+pub fn sampled(requisition: &RequisitionId, application: &ApplicationId) -> bool {
+    let key = format!(
+        "{}:{}:{}:{}",
+        requisition.as_str().len(),
+        requisition.as_str(),
+        application.as_str().len(),
+        application.as_str()
+    );
+    let digest = sha256_hex(key.as_bytes());
+    let bucket = u8::from_str_radix(digest.get(0..2).unwrap_or("ff"), 16).unwrap_or(0xff);
+    bucket % 10 == 0
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn requisition() -> RequisitionId {
+        RequisitionId::try_from("REQ-2026-014").expect("id")
+    }
+
     #[test]
     fn the_sample_is_stable_and_about_a_tenth() {
         let ids: Vec<ApplicationId> = (0..2_000)
             .filter_map(|index| ApplicationId::try_from(format!("APP-{index}")).ok())
             .collect();
-        let hits = ids.iter().filter(|id| sampled(id)).count();
+        let hits = ids.iter().filter(|id| sampled(&requisition(), id)).count();
         assert!(
             (120..=280).contains(&hits),
             "expected roughly 10% of 2000, got {hits}"
         );
-        assert_eq!(sampled(&ids[0]), sampled(&ids[0]));
+        assert_eq!(
+            sampled(&requisition(), &ids[0]),
+            sampled(&requisition(), &ids[0])
+        );
+    }
+
+    #[test]
+    fn the_sample_depends_on_the_requisition_too() {
+        // One applicant id, many requisitions: if the requisition were not part of
+        // the key, every answer would be identical.
+        let application = ApplicationId::try_from("APP-1001").expect("id");
+        let answers: std::collections::BTreeSet<bool> = (0..100)
+            .map(|index| {
+                let requisition =
+                    RequisitionId::try_from(format!("REQ-2026-{index:03}")).expect("id");
+                sampled(&requisition, &application)
+            })
+            .collect();
+        assert!(
+            answers.contains(&true) && answers.contains(&false),
+            "the requisition must participate in the sampling key"
+        );
+    }
+
+    #[test]
+    fn unrelated_csv_columns_do_not_change_the_sample() {
+        use crate::ats::Roster;
+        use std::io::Cursor;
+
+        let base = "APPLICATION_ID,FIRST_NAME,EMAIL,REQ_ID,STAGE_AT_REJECTION\n\
+                    APP-1,Ada,ada@example.com,REQ-2026-014,Initial screen\n\
+                    APP-2,Grace,grace@example.com,REQ-2026-014,Initial screen\n";
+        let extra = "APPLICATION_ID,FIRST_NAME,EMAIL,REQ_ID,STAGE_AT_REJECTION,\
+                     APPLIED_DATE,KO_ANSWER_01,NOTES\n\
+                     APP-1,Ada,ada@example.com,REQ-2026-014,Initial screen,2026-11-01,,\n\
+                     APP-2,Grace,grace@example.com,REQ-2026-014,Initial screen,2026-11-02,,\n";
+
+        let first = Roster::from_csv(&requisition(), Cursor::new(base)).expect("roster");
+        let second = Roster::from_csv(&requisition(), Cursor::new(extra)).expect("roster");
+        let sample = |roster: &Roster| {
+            roster
+                .applicants
+                .iter()
+                .filter(|applicant| sampled(&requisition(), &applicant.application_id))
+                .map(|applicant| applicant.application_id.to_string())
+                .collect::<Vec<String>>()
+        };
+        assert_eq!(sample(&first), sample(&second));
     }
 
     #[test]

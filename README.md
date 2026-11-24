@@ -4,8 +4,11 @@ Audit-grade candidate feedback pilot, implemented in Rust. The operational spec 
 [`V2.md`](V2.md); the site and demo-fixture spec is [`V3.md`](V3.md); the earlier v1
 scope is [`plan.md`](plan.md).
 
-The point of the tool is that V2's constraints are not review instructions — they
-are types, lint rules, and append-only logs.
+The point of the tool is that V2's constraints are not review instructions. They
+live in the code and in the logs: enums and validation that reject a bad row, a
+lint that rejects bad copy, and append-only files that cannot be quietly rewritten.
+Some of that is checked by the compiler, more of it by tests at runtime — the
+claim is "enforced in code and logs", not "unrepresentable".
 
 ## What V2 requires, and where it lives
 
@@ -180,6 +183,67 @@ criteria validation**.
 
 Every `*.jsonl` file is append-only: there is no update or delete code path.
 
+## Crash safety, locking and recovery
+
+- Every append writes one complete newline-terminated line, then `fsync`s the file
+  and its parent directory.
+- A trailing partial line is a **torn write**: the log refuses to load, and
+  `dispatch` refuses to run. There is no silent repair.
+- `ledger log quarantine --reason "<note>"` moves the torn tail into
+  `send_log.jsonl.<timestamp>.quarantine`, truncates the log to its last complete
+  line, re-verifies the chain, and records the action in `operator.jsonl`.
+- Mutating commands take an exclusive `flock` on the workspace; a second process
+  exits `4` with the holder's PID and timestamp. The lock is released by the kernel
+  when a process dies, so a leftover `.lock` file is diagnostic, never stale in the
+  blocking sense.
+- State files are written temp → `fsync` → rename → `fsync` directory.
+
+`tests/crash.rs` kills a real `dispatch` after 70 of 147 sends and asserts the
+two branches: clean restart commits exactly 77 more with no duplicate application;
+a torn tail refuses (`exit 3`) until it is quarantined, after which the same 77
+commit.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | success |
+| `1` | internal/IO error |
+| `2` | circuit-breaker block (dispatch committed nothing; `--allow-blocked` opt-out) |
+| `3` | invalid input, schema or state (including a torn log tail) |
+| `4` | workspace lock contention |
+
+`--json` is available on `demo seed`, `dispatch`, `metrics`, `log verify`,
+`log quarantine` and `review route`; the remaining subcommands print prose.
+
+## Supported platforms
+
+macOS (aarch64, x86_64) and Linux (glibc) are supported and tested. **Windows is
+not supported** and no Windows binary is published: nothing here has been run on
+it, and shipping an untested cross-compiled binary is worse than not shipping one.
+CSV quirks that Windows users care about — UTF-8 BOM, CRLF, quoted commas,
+embedded newlines — are covered as *input* concerns and tested on macOS.
+
+## Documented `expect` sites
+
+`clippy::unwrap_used`, `clippy::panic` and `clippy::indexing_slicing` are denied
+crate-wide (tests excluded via `clippy.toml`). `clippy::expect_used` is
+**deliberately not denied**: these are constants, and turning them into `Result`
+would add error paths that cannot fire. Each is annotated:
+
+| Site | Why it cannot fail |
+| --- | --- |
+| `gate::GateLibrary::seed` — `TextVersion::parse("v1.0")` | the literal matches `v<digits>.<digits>` |
+| `demo::base_time` — `with_ymd_and_hms(...).single()` | fixed literal date at midnight, single-valued |
+| `approval`/`gate` tests | test-only |
+
+## Formats and threat model
+
+- [`FORMAT_SPEC.md`](FORMAT_SPEC.md) — canonical byte encoding, digest coverage,
+  chain rules, schema versions, and the known gaps.
+- [`THREAT_MODEL.md`](THREAT_MODEL.md) — what the chain proves, what it does not,
+  and the off-host anchoring that wholesale rewriting requires.
+
 ## Development
 
 ```bash
@@ -188,11 +252,13 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-82 tests cover: the initial-screen hard filter, the three-variant form, superseding
+101 tests cover: the initial-screen hard filter, the three-variant form, superseding
 corrections, gate unavailability falling back to `FIELD`, the paragraph lint,
 required template slots, QA enforcement, the chain detecting edits and truncation,
-the five metric bands, the routing order, and the fixture's determinism and planted
-failure cases.
+the five metric bands, the routing order, the fixture's determinism and planted
+failure cases, an interrupted dispatch resuming without duplicates, a torn tail
+failing closed until quarantined, workspace locking, golden-format compatibility,
+and agreement between the Rust chain and the standalone Python verifier.
 
 ## What the tool does not do
 

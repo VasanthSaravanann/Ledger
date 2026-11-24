@@ -4,9 +4,12 @@
 //! dispositions, the ATS roster, the two logs, and the review inputs. Keeping the
 //! files named and flat makes the audit trail readable without this tool.
 
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
+use chrono::Utc;
+use fs2::FileExt;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -41,11 +44,35 @@ pub const CHECKLIST: &str = "checklist.json";
 pub const POLICY: &str = "policy.json";
 /// File holding the deterministic fixture's summary.
 pub const DEMO_SUMMARY: &str = "demo-summary.json";
+/// Append-only operator action log.
+pub const OPERATOR: &str = "operator.jsonl";
+/// The advisory lock file guarding the workspace.
+pub const LOCK: &str = ".lock";
 
 /// The pilot workspace.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Store {
     root: PathBuf,
+}
+
+/// Holds the workspace lock until dropped.
+#[derive(Debug)]
+pub struct WorkspaceLock {
+    file: File,
+    path: PathBuf,
+}
+
+impl WorkspaceLock {
+    /// The lock file's path.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for WorkspaceLock {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.file);
+    }
 }
 
 impl Store {
@@ -89,7 +116,7 @@ impl Store {
         Ok(Some(serde_json::from_str(&text)?))
     }
 
-    /// Writes a JSON document atomically (temp file, then rename).
+    /// Writes a JSON document atomically: temp file, fsync, rename, fsync dir.
     ///
     /// # Errors
     ///
@@ -100,11 +127,91 @@ impl Store {
         let temp = path.with_extension("json.tmp");
         let mut text = serde_json::to_string_pretty(value)?;
         text.push('\n');
-        fs::write(&temp, text).map_err(|source| Error::Io {
+
+        let mut file = File::create(&temp).map_err(|source| Error::Io {
             path: temp.clone(),
             source,
         })?;
-        fs::rename(&temp, &path).map_err(|source| Error::Io { path, source })
+        file.write_all(text.as_bytes())
+            .map_err(|source| Error::Io {
+                path: temp.clone(),
+                source,
+            })?;
+        file.sync_all().map_err(|source| Error::Io {
+            path: temp.clone(),
+            source,
+        })?;
+        drop(file);
+
+        fs::rename(&temp, &path).map_err(|source| Error::Io {
+            path: path.clone(),
+            source,
+        })?;
+        crate::jsonl::sync_dir(&self.root)
+    }
+
+    /// Takes the workspace's exclusive advisory lock.
+    ///
+    /// The lock is held by the OS, so a crashed process releases it automatically;
+    /// a leftover `.lock` file is therefore never stale in the blocking sense, and
+    /// the PID/timestamp written inside is diagnostic only.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Locked`] when another process holds the lock, and
+    /// [`Error::Io`] when the lock file cannot be written.
+    pub fn lock(&self) -> Result<WorkspaceLock> {
+        let path = self.path(LOCK);
+        let mut file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&path)
+            .map_err(|source| Error::Io {
+                path: path.clone(),
+                source,
+            })?;
+
+        if let Err(error) = file.try_lock_exclusive() {
+            if error.kind() == std::io::ErrorKind::WouldBlock {
+                let mut holder = String::new();
+                let _ = file.read_to_string(&mut holder);
+                let holder = holder.trim().to_owned();
+                return Err(Error::Locked {
+                    holder: if holder.is_empty() {
+                        "another ledger process".to_owned()
+                    } else {
+                        holder
+                    },
+                });
+            }
+            return Err(Error::Io {
+                path: path.clone(),
+                source: error,
+            });
+        }
+
+        file.set_len(0).map_err(|source| Error::Io {
+            path: path.clone(),
+            source,
+        })?;
+        let stamp = format!(
+            "pid={} at={}\n",
+            std::process::id(),
+            Utc::now().to_rfc3339()
+        );
+        file.write_all(stamp.as_bytes())
+            .map_err(|source| Error::Io {
+                path: path.clone(),
+                source,
+            })?;
+        file.sync_all().map_err(|source| Error::Io {
+            path: path.clone(),
+            source,
+        })?;
+
+        Ok(WorkspaceLock { file, path })
     }
 
     /// Opens an append-only log in the workspace.

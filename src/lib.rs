@@ -35,6 +35,7 @@ pub mod id;
 pub mod jsonl;
 pub mod log;
 pub mod metrics;
+pub mod operator;
 pub mod pipeline;
 pub mod playbook;
 pub mod policy;

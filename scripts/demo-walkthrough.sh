@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The scripted run V3 asks for: seed, preview, blocked cases, QA, dispatch,
 # verify, one-byte tamper, verify again. Never a live demo.
-set -euo pipefail
+set -uo pipefail  # not -e: the script demonstrates non-zero exits
 
 LEDGER="${LEDGER:-./target/release/ledger}"
 DATA="${DATA:-$(mktemp -d)/pilot}"
@@ -19,8 +19,13 @@ echo "\$ ledger qa record --requisition $REQ --application APP-1150 --qa qa-pate
 "$LEDGER" qa record --data "$DATA" --requisition "$REQ" --application APP-1150 --qa qa-patel || true
 
 echo
-echo "\$ ledger dispatch --requisition $REQ"
+echo "\$ ledger dispatch --requisition $REQ   # exit 2: three attempts blocked"
 "$LEDGER" dispatch --data "$DATA" --requisition "$REQ"
+echo "exit: $?"
+
+echo
+echo "\$ ledger log quarantine --reason 'killed between write and newline'   # only on a torn tail"
+"$LEDGER" dispatch --data "$DATA" --requisition "$REQ" --allow-blocked
 
 echo
 echo "\$ ledger log verify"

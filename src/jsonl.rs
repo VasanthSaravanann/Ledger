@@ -6,7 +6,7 @@
 
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
@@ -46,7 +46,11 @@ impl<T> AppendLog<T> {
 }
 
 impl<T: Serialize> AppendLog<T> {
-    /// Appends one record and flushes it to disk.
+    /// Appends one complete, newline-terminated record and fsyncs it.
+    ///
+    /// The whole line is written with a single `write_all`, then the file and its
+    /// parent directory are fsynced, so a crash either publishes the complete line
+    /// or leaves a detectable partial one — never a silently truncated record.
     ///
     /// # Errors
     ///
@@ -60,6 +64,10 @@ impl<T: Serialize> AppendLog<T> {
             })?;
         }
         let line = serde_json::to_string(record)?;
+        let mut buffer = Vec::with_capacity(line.len().saturating_add(1));
+        buffer.extend_from_slice(line.as_bytes());
+        buffer.push(b'\n');
+
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -68,27 +76,35 @@ impl<T: Serialize> AppendLog<T> {
                 path: self.path.clone(),
                 source,
             })?;
-        writeln!(file, "{line}").map_err(|source| Error::Io {
+        file.write_all(&buffer).map_err(|source| Error::Io {
             path: self.path.clone(),
             source,
         })?;
-        file.sync_data().map_err(|source| Error::Io {
+        file.sync_all().map_err(|source| Error::Io {
             path: self.path.clone(),
             source,
-        })
+        })?;
+        if let Some(parent) = self.path.parent() {
+            sync_dir(parent)?;
+        }
+        Ok(())
     }
 }
 
 impl<T: DeserializeOwned> AppendLog<T> {
     /// Reads every record, in append order. A missing file is an empty log.
     ///
+    /// A trailing partial line is a torn write and is reported, never dropped: the
+    /// caller has to quarantine it deliberately.
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::Io`] when the file cannot be read and [`Error::Json`]
-    /// when a line is not a valid record.
+    /// Returns [`Error::TornWrite`] when the file does not end with a newline,
+    /// [`Error::Io`] when it cannot be read, and [`Error::Invalid`] when a line is
+    /// not a valid record.
     pub fn read_all(&self) -> Result<Vec<T>> {
-        let file = match File::open(&self.path) {
-            Ok(file) => file,
+        let bytes = match fs::read(&self.path) {
+            Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
             Err(source) => {
                 return Err(Error::Io {
@@ -97,16 +113,30 @@ impl<T: DeserializeOwned> AppendLog<T> {
                 });
             }
         };
-        let mut records = Vec::new();
-        for (index, line) in BufReader::new(file).lines().enumerate() {
-            let line = line.map_err(|source| Error::Io {
+        if let Some(last_newline) = bytes.iter().rposition(|byte| *byte == b'\n') {
+            let tail = bytes.len().saturating_sub(last_newline + 1);
+            if tail > 0 {
+                return Err(Error::TornWrite {
+                    path: self.path.clone(),
+                    bytes: tail,
+                });
+            }
+        } else if !bytes.is_empty() {
+            return Err(Error::TornWrite {
                 path: self.path.clone(),
-                source,
-            })?;
+                bytes: bytes.len(),
+            });
+        }
+
+        let text = String::from_utf8(bytes).map_err(|_| {
+            Error::invalid("log", format!("{} is not valid UTF-8", self.path.display()))
+        })?;
+        let mut records = Vec::new();
+        for (index, line) in text.lines().enumerate() {
             if line.trim().is_empty() {
                 continue;
             }
-            let record = serde_json::from_str(&line).map_err(|error| {
+            let record = serde_json::from_str(line).map_err(|error| {
                 Error::invalid(
                     "log line",
                     format!("{}:{}: {error}", self.path.display(), index + 1),
@@ -118,11 +148,44 @@ impl<T: DeserializeOwned> AppendLog<T> {
     }
 }
 
+/// fsyncs a directory so a rename or create is durable.
+///
+/// Declared platforms are macOS and Linux (see README); Windows is unsupported.
+pub(crate) fn sync_dir(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let directory = File::open(path).map_err(|source| Error::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        directory.sync_all().map_err(|source| Error::Io {
+            path: path.to_path_buf(),
+            source,
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(())
+    }
+}
+
+/// Reads a file's bytes, or `None` when it does not exist.
+pub fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(Error::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use serde::Deserialize;
-
     use super::*;
+    use serde::Deserialize;
 
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
     struct Row {
@@ -141,6 +204,20 @@ mod tests {
             log.read_all().expect("read back"),
             vec![Row { n: 1 }, Row { n: 2 }]
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_torn_trailing_line_is_detected_not_dropped() {
+        let dir = std::env::temp_dir().join(format!("ledger-torn-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("rows.jsonl");
+        let mut log = AppendLog::open(&path);
+        log.append(&Row { n: 1 }).expect("append");
+        let mut bytes = fs::read(&path).expect("read");
+        bytes.extend_from_slice(b"{\"n\":2}");
+        fs::write(&path, bytes).expect("write");
+        assert!(matches!(log.read_all(), Err(Error::TornWrite { .. })));
         let _ = fs::remove_dir_all(&dir);
     }
 

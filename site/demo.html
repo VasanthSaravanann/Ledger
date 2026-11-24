@@ -46,7 +46,7 @@ requisition:        REQ-2026-014
 CSV rows:           151 (1 dropped past the initial screen)
 roster rows:        150
 dispositions:       GATE 12, FIELD 129, ADMIN 8, missing 1
-QA checks recorded: 31
+QA checks recorded: 24
 
 $ ledger dispatch --preview --requisition REQ-2026-014
 preview: 147 email(s) would send
@@ -64,9 +64,9 @@ blocked 3
 
 $ ledger log verify
 send log verified: 147 entries
-head: eb90f8fb66d3577a
+head: d347a639fff01dad
 
-$ printf 'X' | dd of=pilot/send_log.jsonl bs=1 seek=120 count=1 conv=notrunc
+$ printf &#39;X&#39; | dd of=pilot/send_log.jsonl bs=1 seek=120 count=1 conv=notrunc
 1+0 records in
 1+0 records out
 

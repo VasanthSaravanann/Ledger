@@ -222,6 +222,7 @@ fn escape(value: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 /// A short hash, for tables.
@@ -509,7 +510,9 @@ fn tamper_check(store: &Store) -> Result<(bool, Option<(u64, String)>)> {
         } else if let Some(byte) = entry.body.as_bytes().first().copied() {
             let replacement = if byte == b'A' { b'B' } else { b'A' };
             let mut bytes = entry.body.clone().into_bytes();
-            bytes[0] = replacement;
+            if let Some(slot) = bytes.first_mut() {
+                *slot = replacement;
+            }
             entry.body = String::from_utf8_lossy(&bytes).into_owned();
         }
         *first = serde_json::to_string(&entry)?;

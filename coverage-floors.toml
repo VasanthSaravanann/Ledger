@@ -1,0 +1,16 @@
+# Per-module line-coverage floors for the modules V4 names. A single global
+# percentage rewards testing trivial code; these floors only rise.
+#
+#   digest       canonical encoder: a wrong byte silently breaks every digest
+#   log          chain verification and framing
+#   pipeline     the three circuit-breakers
+#   metrics      the five pre-registered bands
+#   qa           the deterministic sample
+#   template     slot resolution and Template A/B/C rules
+[floors]
+"src/digest.rs" = 90
+"src/log.rs" = 85
+"src/pipeline.rs" = 85
+"src/metrics.rs" = 90
+"src/qa.rs" = 90
+"src/template.rs" = 85

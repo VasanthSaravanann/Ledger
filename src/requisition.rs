@@ -205,7 +205,8 @@ fn has_years_bar(lowered: &str) -> bool {
     while let Some(found) = lowered[from..].find("year") {
         let at = from + found;
         let window_start = at.saturating_sub(12);
-        if bytes[window_start..at].iter().any(u8::is_ascii_digit) {
+        let window = bytes.get(window_start..at).unwrap_or_default();
+        if window.iter().any(u8::is_ascii_digit) {
             return true;
         }
         from = at + 4;

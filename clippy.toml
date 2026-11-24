@@ -1,0 +1,6 @@
+# Tests may unwrap/expect/panic and index freely; the crate lints exist to keep
+# production paths free of them.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true

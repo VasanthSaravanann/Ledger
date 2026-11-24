@@ -13,7 +13,9 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::digest::sha256_hex;
+use crate::digest::{
+    CanonicalValue, DIGEST_VERSION, canonical_bytes, epoch_seconds, sha256_hex, truncate_to_seconds,
+};
 use crate::disposition::{DispositionKind, DispositionRecord};
 use crate::error::{Error, Result};
 use crate::gate::GateKind;
@@ -28,6 +30,9 @@ use crate::template::RenderedEmail;
 
 /// The `prev_hash` of the first entry in a chain.
 pub const GENESIS_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+/// The send-log schema version this build writes.
+pub const SCHEMA_VERSION: u32 = 1;
 
 /// `DELIVERY_STATUS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,8 +90,12 @@ pub struct SendEntry {
     pub seq: u64,
     /// The previous entry's `entry_hash`, or [`GENESIS_HASH`].
     pub prev_hash: String,
-    /// SHA-256 over this entry's hashed fields, including `prev_hash`.
+    /// SHA-256 over the canonical payload; see `FORMAT_SPEC.md` §4.
     pub entry_hash: String,
+    /// Advisory schema version. Not covered by the digest, so bumping it cannot
+    /// invalidate earlier entries.
+    #[serde(default = "current_schema_version")]
+    pub schema_version: u32,
     /// `SEND_ID`.
     pub send_id: SendId,
     /// `APPLICATION_ID`.
@@ -103,9 +112,11 @@ pub struct SendEntry {
     pub decision_maker: DecisionMakerId,
     /// The disposition record this send renders.
     pub disposition_id: DispositionId,
-    /// `DISPOSITION`.
+    /// `DISPOSITION`: exactly `GATE`, `FIELD` or `ADMIN`.
+    #[serde(with = "disposition_code")]
     pub disposition: DispositionKind,
-    /// `GATE_CODE`, for `GATE` sends.
+    /// `GATE_CODE`: exactly `GATE-01`..`GATE-05`, or null.
+    #[serde(default, with = "optional_gate_code")]
     pub gate_code: Option<GateKind>,
     /// `CAPTURE_TIMESTAMP`.
     pub captured_at: DateTime<Utc>,
@@ -125,57 +136,122 @@ pub struct SendEntry {
     pub delivery_status: DeliveryStatus,
 }
 
-/// The fields covered by the chain hash, in a fixed order.
-#[derive(Serialize)]
-struct Hashed<'a> {
-    seq: u64,
-    prev_hash: &'a str,
-    send_id: &'a SendId,
-    application_id: &'a ApplicationId,
-    candidate_first_name: &'a str,
-    candidate_email: &'a CandidateEmail,
-    requisition: &'a RequisitionId,
-    recruiter: &'a RecruiterId,
-    decision_maker: &'a DecisionMakerId,
-    disposition_id: &'a DispositionId,
-    disposition: DispositionKind,
-    gate_code: Option<GateKind>,
-    captured_at: DateTime<Utc>,
-    sent_at: DateTime<Utc>,
-    template: TemplateKind,
-    text_version: &'a TextVersion,
-    subject: &'a str,
-    body: &'a str,
-    text_digest: &'a str,
-    delivery_status: DeliveryStatus,
+/// The schema version default for entries written before versioning existed.
+fn current_schema_version() -> u32 {
+    SCHEMA_VERSION
+}
+
+/// Serialises `DISPOSITION` as its exact code, so the stored field and the digest
+/// field are the same string. Deserialisation also accepts the older kebab form.
+mod disposition_code {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    use crate::disposition::DispositionKind;
+
+    pub fn serialize<S: Serializer>(
+        kind: &DispositionKind,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(kind.code())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<DispositionKind, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        value
+            .parse::<DispositionKind>()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// Serialises `GATE_CODE` as its block code, or null.
+mod optional_gate_code {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    use crate::gate::GateKind;
+
+    pub fn serialize<S: Serializer>(
+        gate: &Option<GateKind>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match gate {
+            Some(gate) => serializer.serialize_str(gate.code()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<GateKind>, D::Error> {
+        let value = Option::<String>::deserialize(deserializer)?;
+        value
+            .map(|gate| gate.parse::<GateKind>().map_err(serde::de::Error::custom))
+            .transpose()
+    }
 }
 
 impl SendEntry {
-    /// Recomputes this entry's chain hash.
-    fn compute_hash(&self) -> Result<String> {
-        let payload = Hashed {
-            seq: self.seq,
-            prev_hash: &self.prev_hash,
-            send_id: &self.send_id,
-            application_id: &self.application_id,
-            candidate_first_name: &self.candidate_first_name,
-            candidate_email: &self.candidate_email,
-            requisition: &self.requisition,
-            recruiter: &self.recruiter,
-            decision_maker: &self.decision_maker,
-            disposition_id: &self.disposition_id,
-            disposition: self.disposition,
-            gate_code: self.gate_code,
-            captured_at: self.captured_at,
-            sent_at: self.sent_at,
-            template: self.template,
-            text_version: &self.text_version,
-            subject: &self.subject,
-            body: &self.body,
-            text_digest: &self.text_digest,
-            delivery_status: self.delivery_status,
-        };
-        Ok(sha256_hex(&serde_json::to_vec(&payload)?))
+    /// The canonical digest payload, exactly the allowlist in `FORMAT_SPEC.md` §4.
+    fn payload(&self) -> CanonicalValue {
+        CanonicalValue::object([
+            ("digest_version", CanonicalValue::Int(DIGEST_VERSION)),
+            ("seq", CanonicalValue::Int(self.seq as i64)),
+            ("prev_hash", CanonicalValue::text(&self.prev_hash)),
+            ("send_id", CanonicalValue::text(self.send_id.as_str())),
+            (
+                "application_id",
+                CanonicalValue::text(self.application_id.as_str()),
+            ),
+            (
+                "candidate_first_name",
+                CanonicalValue::text(&self.candidate_first_name),
+            ),
+            (
+                "candidate_email",
+                CanonicalValue::text(self.candidate_email.as_str()),
+            ),
+            (
+                "requisition",
+                CanonicalValue::text(self.requisition.as_str()),
+            ),
+            ("recruiter", CanonicalValue::text(self.recruiter.as_str())),
+            (
+                "decision_maker",
+                CanonicalValue::text(self.decision_maker.as_str()),
+            ),
+            (
+                "disposition_id",
+                CanonicalValue::text(self.disposition_id.as_str()),
+            ),
+            ("disposition", CanonicalValue::text(self.disposition.code())),
+            (
+                "gate_code",
+                CanonicalValue::maybe_text(self.gate_code.map(GateKind::code)),
+            ),
+            (
+                "captured_at",
+                CanonicalValue::Int(epoch_seconds(self.captured_at)),
+            ),
+            ("sent_at", CanonicalValue::Int(epoch_seconds(self.sent_at))),
+            ("template", CanonicalValue::text(self.template.code())),
+            (
+                "text_version",
+                CanonicalValue::text(self.text_version.as_str()),
+            ),
+            ("subject", CanonicalValue::text(&self.subject)),
+            ("body", CanonicalValue::text(&self.body)),
+            ("text_digest", CanonicalValue::text(&self.text_digest)),
+            (
+                "delivery_status",
+                CanonicalValue::text(self.delivery_status.code()),
+            ),
+        ])
+    }
+
+    /// Recomputes this entry's chain hash from the canonical payload.
+    fn compute_hash(&self) -> String {
+        sha256_hex(&canonical_bytes(&self.payload()))
     }
 }
 
@@ -249,6 +325,7 @@ impl SendLog {
             seq,
             prev_hash,
             entry_hash: String::new(),
+            schema_version: SCHEMA_VERSION,
             send_id: SendId::try_from(format!("SND-{:06}", seq + 1))?,
             application_id: draft.disposition.form.application_id,
             candidate_first_name: draft.disposition.form.candidate_first_name,
@@ -259,8 +336,8 @@ impl SendLog {
             disposition_id: draft.disposition.id,
             disposition: draft.disposition.form.disposition.kind(),
             gate_code: draft.disposition.form.disposition.gate(),
-            captured_at: draft.disposition.form.captured_at,
-            sent_at,
+            captured_at: truncate_to_seconds(draft.disposition.form.captured_at),
+            sent_at: truncate_to_seconds(sent_at),
             template: draft.disposition.form.disposition.kind().template_kind(),
             text_version: draft.text_version,
             subject: draft.rendered.subject,
@@ -268,7 +345,7 @@ impl SendLog {
             text_digest,
             delivery_status: draft.delivery_status,
         };
-        entry.entry_hash = entry.compute_hash()?;
+        entry.entry_hash = entry.compute_hash();
         self.log.append(&entry)?;
         self.sent
             .insert((entry.requisition.clone(), entry.application_id.clone()));
@@ -325,6 +402,7 @@ impl SendLog {
 /// Checks sequence numbers, chaining, and recomputed hashes.
 fn verify_chain(path: &Path, entries: &[SendEntry]) -> Result<()> {
     let mut expected_prev = GENESIS_HASH.to_owned();
+    let mut previous_sent_at: Option<DateTime<Utc>> = None;
     for (index, entry) in entries.iter().enumerate() {
         let seq = index as u64;
         let corrupt = |reason: String| Error::LogCorrupt {
@@ -343,11 +421,28 @@ fn verify_chain(path: &Path, entries: &[SendEntry]) -> Result<()> {
                 "prev_hash does not match the previous entry".to_owned(),
             ));
         }
-        if entry.compute_hash()? != entry.entry_hash {
+        if entry.compute_hash() != entry.entry_hash {
             return Err(corrupt(
                 "entry hash does not cover the stored fields".to_owned(),
             ));
         }
+        if entry.schema_version > SCHEMA_VERSION {
+            return Err(corrupt(format!(
+                "unknown schema_version {} (this build knows {SCHEMA_VERSION})",
+                entry.schema_version
+            )));
+        }
+        if entry.captured_at > entry.sent_at {
+            return Err(corrupt("captured_at is after sent_at".to_owned()));
+        }
+        if let Some(previous) = previous_sent_at {
+            if entry.sent_at < previous {
+                return Err(corrupt(
+                    "sent_at is earlier than the previous entry".to_owned(),
+                ));
+            }
+        }
+        previous_sent_at = Some(entry.sent_at);
         expected_prev = entry.entry_hash.clone();
     }
     Ok(())

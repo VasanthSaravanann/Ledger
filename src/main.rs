@@ -120,6 +120,9 @@ struct DemoSeedArgs {
     /// Also commit the sends and the GATE-02 version bump (for the site build).
     #[arg(long)]
     record: bool,
+    /// Print the summary as JSON.
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -426,14 +429,42 @@ struct DispatchArgs {
     /// Write the build-time artefact pages into this directory.
     #[arg(long, value_name = "DIR")]
     export_html: Option<PathBuf>,
+    /// Print the run as JSON.
+    #[arg(long)]
+    json: bool,
+    /// Exit 0 even when attempts were blocked (exit 2 is the default for a commit).
+    #[arg(long)]
+    allow_blocked: bool,
 }
 
 #[derive(Debug, Subcommand)]
 enum LogCommand {
     /// Verify the hash chain and print its head.
-    Verify,
+    Verify(LogVerifyArgs),
     /// Export the send log as CSV with REPLY_RECEIVED_FLAG.
     Export(LogExportArgs),
+    /// Preserve a torn trailing line and restore chain continuity.
+    Quarantine(LogQuarantineArgs),
+}
+
+#[derive(Debug, Args)]
+struct LogVerifyArgs {
+    /// Print the verification as JSON.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Debug, Args)]
+struct LogQuarantineArgs {
+    /// Why the tail is being quarantined; recorded in operator.jsonl.
+    #[arg(long)]
+    reason: String,
+    /// Operator name; defaults to LEDGER_OPERATOR, then USER.
+    #[arg(long)]
+    operator: Option<String>,
+    /// Print the report as JSON.
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -546,7 +577,7 @@ fn main() -> std::process::ExitCode {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error}");
-            std::process::ExitCode::FAILURE
+            std::process::ExitCode::from(error.exit_code())
         }
     }
 }
@@ -557,6 +588,10 @@ fn execute(cli: Cli) -> Result<()> {
 }
 
 fn run(store: &Store, command: Command) -> Result<()> {
+    // Read-only commands never take the lock; everything else does, so two
+    // operators cannot interleave writes into the same workspace.
+    let read_only = is_read_only(&command);
+    let _lock = if read_only { None } else { Some(store.lock()?) };
     match command {
         Command::Init => init(store),
         Command::Demo(DemoCommand::Seed(args)) => demo_seed(store, &args),
@@ -1264,7 +1299,7 @@ fn qa(store: &Store, command: QaCommand) -> Result<()> {
             let mut log = QaLog::open(store)?;
             let recorded = log.record(QaRecord {
                 application_id: application.clone(),
-                requisition,
+                requisition: requisition.clone(),
                 qa: QaId::try_from(args.qa.as_str())?,
                 at: Utc::now(),
                 scope,
@@ -1274,7 +1309,7 @@ fn qa(store: &Store, command: QaCommand) -> Result<()> {
             } else {
                 println!("{application} already has a QA check on file");
             }
-            if scope == QaScope::RandomTenPercent && !sampled(&application) {
+            if scope == QaScope::RandomTenPercent && !sampled(&requisition, &application) {
                 println!(
                     "note: {application} is outside the deterministic 10% sample; the check is \
                      still recorded"
@@ -1346,21 +1381,50 @@ fn dispatch_command(store: &Store, args: &DispatchArgs) -> Result<()> {
         &mut send_log,
         &mut blocked_log,
     )?;
-    print_dispatch_report(&report, mode);
+    if args.json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "mode": if mode == Mode::Preview { "preview" } else { "execute" },
+                "sent": report.sent_count(),
+                "previews": report.preview_count(),
+                "blocked": report.blocked_count(),
+                "blocked_reasons": report
+                    .blocked
+                    .iter()
+                    .map(|attempt| attempt.reason.to_string())
+                    .collect::<Vec<String>>(),
+            })
+        );
+    } else {
+        print_dispatch_report(&report, mode);
+    }
 
     if let Some(dir) = &args.export_html {
         let export = ledger::site::export_html(store, dir)?;
         println!("\nwrote {} pages to {}", export.pages.len(), dir.display());
-        println!(
-            "audit: untouched log verifies = {}, one-byte tamper detected = {}",
-            export.audit_valid, export.audit_tampered_detected
-        );
+        if !args.json {
+            println!(
+                "audit: untouched log verifies = {}, one-byte tamper detected = {}",
+                export.audit_valid, export.audit_tampered_detected
+            );
+        }
+    }
+
+    if mode == Mode::Execute && report.blocked_count() > 0 && !args.allow_blocked {
+        return Err(Error::Blocked {
+            count: report.blocked_count(),
+        });
     }
     Ok(())
 }
 
 fn demo_seed(store: &Store, args: &DemoSeedArgs) -> Result<()> {
     let summary = ledger::demo::seed(store, args.force, args.record)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&summary)?);
+        return Ok(());
+    }
     println!("synthetic fixture — no pilot data yet");
     println!("requisition:        {}", summary.requisition);
     println!("CSV rows:           {}", summary.csv_rows);
@@ -1440,10 +1504,41 @@ fn print_dispatch_report(report: &DispatchReport, mode: Mode) {
 
 fn log(store: &Store, command: LogCommand) -> Result<()> {
     match command {
-        LogCommand::Verify => {
+        LogCommand::Verify(args) => {
             let verification = SendLog::open(store)?.verification()?;
-            println!("send log verified: {} entries", verification.entries);
-            println!("head: {}", verification.head);
+            if args.json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "valid": true,
+                        "entries": verification.entries,
+                        "head": verification.head,
+                    })
+                );
+            } else {
+                println!("send log verified: {} entries", verification.entries);
+                println!("head: {}", verification.head);
+            }
+            Ok(())
+        }
+        LogCommand::Quarantine(args) => {
+            let operator = ledger::operator::identity(args.operator.as_deref());
+            let report =
+                ledger::operator::quarantine(store, args.reason.as_str(), operator.as_str())?;
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!(
+                    "quarantined {} byte(s) to {}",
+                    report.bytes_moved,
+                    report.sidecar.display()
+                );
+                println!(
+                    "send log now has {} entries and verifies",
+                    report.remaining_entries
+                );
+                println!("recorded in operator.jsonl by {operator}");
+            }
             Ok(())
         }
         LogCommand::Export(args) => {
@@ -1683,6 +1778,25 @@ fn checklist(store: &Store, command: ChecklistCommand) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Whether a command only reads.
+fn is_read_only(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Status(_)
+            | Command::Gate(GateCommand::List)
+            | Command::Requisition(RequisitionCommand::Show(_) | RequisitionCommand::List)
+            | Command::Templates(TemplatesCommand::Show)
+            | Command::Playbook(PlaybookCommand::Show | PlaybookCommand::Script(_))
+            | Command::Disposition(DispositionCommand::List(_) | DispositionCommand::History(_))
+            | Command::Qa(QaCommand::List(_))
+            | Command::Log(LogCommand::Verify(_) | LogCommand::Export(_))
+            | Command::Metrics(_)
+            | Command::Review(ReviewCommand::Route(_))
+            | Command::Checklist(ChecklistCommand::Show)
+            | Command::Governance(GovernanceCommand::Show)
+    )
 }
 
 fn load_library(store: &Store) -> Result<GateLibrary> {

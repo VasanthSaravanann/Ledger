@@ -247,7 +247,7 @@ pub fn seed(store: &Store, force: bool, record: bool) -> Result<DemoSummary> {
             continue;
         };
         let is_gate = matches!(record.form.disposition, Disposition::Gate { .. });
-        if !is_gate && !sampled(&applicant.application_id) {
+        if !is_gate && !sampled(&requisition.id, &applicant.application_id) {
             continue;
         }
         if !is_gate && !gap_used {
@@ -374,10 +374,14 @@ pub fn summary(store: &Store) -> Result<DemoSummary> {
 }
 
 /// The fixed clock the fixture derives every timestamp from.
+///
+/// A past instant on purpose: captures must precede sends, and `dispatch` stamps
+/// sends with the real clock. A future-dated fixture would violate that invariant —
+/// which `log verify` now checks.
 fn base_time() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 11, 24, 9, 0, 0)
+    Utc.with_ymd_and_hms(2026, 11, 2, 9, 0, 0)
         .single()
-        .expect("the fixture clock is a valid instant")
+        .expect("the fixture clock is a valid instant") // constant, cannot fail
 }
 
 /// The requisition facts `GATE-02`..`GATE-05` need.
@@ -420,7 +424,10 @@ fn render_csv() -> String {
     );
     for index in 0..ROSTER_ROWS {
         let application = format!("APP-{}", 1001 + index);
-        let first_name = FIRST_NAMES[index % FIRST_NAMES.len()];
+        let first_name = FIRST_NAMES
+            .get(index % FIRST_NAMES.len())
+            .copied()
+            .unwrap_or("Candidate");
         let email = format!("app{}@example.com", 1001 + index);
         let (ko1, ko2) = match index {
             i if GATE01.contains(&i) => ("not-held", ""),
@@ -576,9 +583,12 @@ pub fn fingerprint(store: &Store) -> Result<String> {
         if !path.is_file() {
             continue;
         }
+        // Transient/self-referential files are not part of the content fingerprint:
+        // the summary is computed from the others, and the lock file changes with
+        // whoever ran the command.
         if path
             .file_name()
-            .is_some_and(|name| name == store::DEMO_SUMMARY)
+            .is_some_and(|name| name == store::DEMO_SUMMARY || name == store::LOCK)
         {
             continue;
         }

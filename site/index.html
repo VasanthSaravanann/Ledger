@@ -12,7 +12,7 @@
     <meta property="og:title" content="Ledger — audit-grade candidate feedback pilot" />
     <meta
       property="og:description"
-      content="Manually sent, machine-enforced: the pilot's constraints as types, lint rules, and append-only logs."
+      content="Manually sent, machine-enforced: the pilot's constraints live in the code and in append-only logs."
     />
     <meta property="og:type" content="website" />
     <style>
@@ -219,8 +219,9 @@
       <p class="lede">
         <strong>Ledger</strong> is Rust tooling for the audit-grade candidate feedback pilot in
         <code>V2.md</code>: 100% of rejected candidates on one high-volume requisition get a
-        human-recorded reason, with no ATS integration and no automated decision. Every page below
-        is generated at build time from the CLI's own output.
+        human-recorded reason, with no ATS integration and no automated decision. Constraints are
+        enforced in code — validation, a copy lint, and append-only files — not by convention.
+        Every page below is generated at build time from the CLI's own output.
       </p>
 
       <ul class="grid">

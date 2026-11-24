@@ -299,6 +299,7 @@ pub fn dispatch(
                     delivery_status: job.delivery_status,
                 };
                 report.sent.push(send_log.append(draft, job.now)?);
+                maybe_abort(report.sent.len());
             }
         }
 
@@ -307,6 +308,19 @@ pub fn dispatch(
     }
 
     Ok(report)
+}
+
+/// Test-only crash injection: `LEDGER_ABORT_AFTER_SENDS=n` aborts the process once
+/// `n` sends are committed, so the recovery path can be tested against a real
+/// half-finished dispatch rather than a simulation.
+fn maybe_abort(completed: usize) {
+    if let Ok(limit) = std::env::var("LEDGER_ABORT_AFTER_SENDS") {
+        if let Ok(limit) = limit.parse::<usize>() {
+            if completed >= limit {
+                std::process::abort();
+            }
+        }
+    }
 }
 
 /// Records one refusal, and writes it to the log when executing.

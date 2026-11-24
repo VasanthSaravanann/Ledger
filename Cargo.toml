@@ -10,11 +10,21 @@ license = "MIT"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 csv = "1"
+fs2 = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 thiserror = "2"
+unicode-normalization = "0.1"
 
 [lints.rust]
 unsafe_code = "forbid"
 missing_debug_implementations = "warn"
+
+# V4 6.1: no unwrap, no panic!, no slice indexing outside tests. `expect` is
+# deliberately NOT denied; it is confined to const-initialisation sites listed in
+# README.md ("Documented expects") and each site carries a justification comment.
+[lints.clippy]
+unwrap_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
