@@ -2,3 +2,5 @@
 /ledger-data
 *.tmp
 .DS_Store
+.vercel
+.vercel
