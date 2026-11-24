@@ -125,6 +125,17 @@ enum Command {
     Operator(OperatorCommand),
     /// Re-check every disposition's operator signature.
     VerifySignatures(VerifySignaturesArgs),
+    /// Serve the local recruiter workspace (requires --features ui).
+    #[cfg(feature = "ui")]
+    Ui(UiArgs),
+}
+
+#[cfg(feature = "ui")]
+#[derive(Debug, Args)]
+struct UiArgs {
+    /// Loopback port for the local workspace.
+    #[arg(long, default_value_t = 8420)]
+    port: u16,
 }
 
 #[derive(Debug, Subcommand)]
@@ -764,6 +775,8 @@ fn run(store: &Store, command: Command, explicit_operator: Option<&str>) -> Resu
         Command::Find(args) => find(store, &args),
         Command::Operator(command) => operator(store, command, explicit_operator),
         Command::VerifySignatures(args) => verify_signatures(store, &args),
+        #[cfg(feature = "ui")]
+        Command::Ui(args) => ui(store, &args, explicit_operator),
     };
 
     // Every mutating command that succeeded leaves an operator record. The argv is
@@ -810,6 +823,8 @@ fn command_name(command: &Command) -> &'static str {
         Command::Find(_) => "find",
         Command::Operator(_) => "operator",
         Command::VerifySignatures(_) => "verify-signatures",
+        #[cfg(feature = "ui")]
+        Command::Ui(_) => "ui",
     }
 }
 
@@ -1575,107 +1590,65 @@ fn operator(store: &Store, command: OperatorCommand, explicit: Option<&str>) -> 
     }
 }
 
+#[cfg(feature = "ui")]
+fn ui(store: &Store, args: &UiArgs, explicit: Option<&str>) -> Result<()> {
+    let registry = ledger::identity::Registry::load(store)?;
+    let operator = ledger::identity::active(&registry, explicit)?;
+    ledger::ui::run(ledger::ui::Config {
+        data: store.root().to_path_buf(),
+        operator: operator.name,
+        port: args.port,
+    })
+}
+
 fn verify_signatures(store: &Store, args: &VerifySignaturesArgs) -> Result<()> {
-    let dispositions = Dispositions::open(store)?;
-    let mut signed = 0usize;
-    let mut unsigned = 0usize;
-    let mut unsigned_list: Vec<String> = Vec::new();
-    let mut invalid: Vec<String> = Vec::new();
-    let mut drifted: Vec<String> = Vec::new();
+    let report = ledger::verify::verify_workspace(store)?;
+    let registry = ledger::identity::Registry::load(store)?;
 
-    // Sign-offs are checked against the copy they were bound to, and against the
-    // copy that is on disk now: a later edit must not inherit an old signature.
-    let library = load_library(store)?;
-    let templates = load_templates(store)?;
-    let playbook = load_playbook(store)?;
-    let book = load_requisitions(store)?;
-
-    // Only each role's newest sign-off is authoritative; older ones are the audit
-    // trail of what was approved before.
-    let mut check = |label: &str, approval: &ledger::approval::Approval, hash: &str| {
-        for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
-            let Some(sign_off) = approval.latest(role) else {
-                continue;
-            };
-            // A signature is checked against the hash it *recorded*, so history
-            // stays verifiable; whether it still covers the current copy is the
-            // separate "stale" question.
-            let recorded = sign_off.artefact_hash.clone().unwrap_or_default();
-            match &sign_off.signature {
-                None => {
-                    unsigned += 1;
-                    unsigned_list.push(format!("{label}:{role}"));
-                }
-                Some(signature) if signature.verify(&recorded) => signed += 1,
-                Some(_) => invalid.push(format!("{label}:{role}")),
-            }
-            if !sign_off.covers(hash) {
-                drifted.push(format!("{label}:{role}"));
-            }
-        }
-    };
-    check("gate-library", &library.approval, &library.content_hash());
-    for kind in TemplateKind::ALL {
-        let template = templates.require(kind)?;
-        check(
-            &format!("template-{}", kind.code()),
-            &template.approval,
-            &template.content_hash(),
-        );
-    }
-    check("playbook", &playbook.approval, &playbook.content_hash());
-    for requisition in book.iter() {
-        check(
-            &format!("requisition-{}", requisition.id),
-            &requisition.approval,
-            &requisition.content_hash(),
-        );
-        if let Some(paragraph) = &requisition.comparative {
-            check(
-                &format!("comparative-{}", requisition.id),
-                &paragraph.approval,
-                &paragraph.content_hash(),
-            );
-        }
-    }
-    for record in dispositions.records() {
-        match &record.form.signature {
-            None => unsigned += 1,
-            Some(_) if record.form.signature_valid() => signed += 1,
-            Some(_) => invalid.push(record.id.to_string()),
-        }
-    }
-    let report = serde_json::json!({
-        "signed": signed,
-        "unsigned": unsigned,
-        "unsigned_records": unsigned_list,
-        "invalid": invalid,
-        "drifted": drifted,
-    });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
-        println!("signed records:   {signed}");
-        println!("unsigned records: {unsigned}");
-        if !unsigned_list.is_empty() {
-            println!("UNSIGNED:         {}", unsigned_list.join(", "));
+        println!("signed records:   {}", report.dispositions_signed);
+        println!("unsigned records: {}", report.dispositions_unsigned);
+        if !report.dispositions_invalid.is_empty() {
+            println!(
+                "INVALID:          {}",
+                report.dispositions_invalid.join(", ")
+            );
         }
-        if !invalid.is_empty() {
-            println!("INVALID:          {}", invalid.join(", "));
+        for artefact in &report.artefacts {
+            println!("{:<32} {}", artefact.label, artefact.status);
         }
-        if !drifted.is_empty() {
-            println!("STALE (copy edited after sign-off): {}", drifted.join(", "));
+        if !report.stale_labels().is_empty() {
+            println!(
+                "STALE (copy edited after sign-off): {}",
+                report.stale_labels().join(", ")
+            );
+        }
+        if !report.unsigned_labels().is_empty() {
+            println!(
+                "UNSIGNED artefacts: {}",
+                report.unsigned_labels().join(", ")
+            );
+        }
+        if !report.invalid_labels().is_empty() {
+            println!("INVALID artefacts:  {}", report.invalid_labels().join(", "));
         }
     }
-    let registry = ledger::identity::Registry::load(store)?;
-    if !invalid.is_empty() || !drifted.is_empty() || (!registry.is_empty() && unsigned > 0) {
+
+    let unsigned_matters = !registry.is_empty() && report.dispositions_unsigned > 0;
+    if !report.is_clean() || unsigned_matters {
         return Err(Error::invalid(
             "signature",
             format!(
-                "{} invalid signature(s), {} stale sign-off(s), {} unsigned",
-                invalid.len(),
-                drifted.len(),
-                unsigned
+                "{} invalid signature(s), {} stale or unsigned artefact(s), {} unsigned record(s)",
+                report.dispositions_invalid.len() + report.invalid_labels().len(),
+                report
+                    .artefacts
+                    .iter()
+                    .filter(|a| !a.status.is_valid())
+                    .count(),
+                report.dispositions_unsigned
             ),
         ));
     }
@@ -2346,6 +2319,16 @@ impl Actor<'_> {
 
 /// Whether a command only reads.
 fn is_read_only(command: &Command) -> bool {
+    // `ui` is excluded from the CLI's lock and RBAC pass: it launches a server
+    // (any role may look) and enforces the role on each request instead.
+    #[cfg(feature = "ui")]
+    if matches!(command, Command::Ui(_)) {
+        return true;
+    }
+    read_only_core(command)
+}
+
+fn read_only_core(command: &Command) -> bool {
     matches!(
         command,
         Command::Status(_)
@@ -2360,9 +2343,9 @@ fn is_read_only(command: &Command) -> bool {
             | Command::Review(ReviewCommand::Route(_))
             | Command::Checklist(ChecklistCommand::Show)
             | Command::Governance(GovernanceCommand::Show)
-            | Command::Find(_)
             | Command::Operator(OperatorCommand::List | OperatorCommand::Whoami)
             | Command::VerifySignatures(_)
+            | Command::Find(_)
     )
 }
 

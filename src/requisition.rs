@@ -541,6 +541,15 @@ pub struct RequisitionBook {
 }
 
 impl RequisitionBook {
+    /// Loads the book, or an empty one.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] or [`Error::Json`] when the file cannot be read.
+    pub fn load(store: &crate::store::Store) -> Result<Self> {
+        Ok(store.load(crate::store::REQUISITIONS)?.unwrap_or_default())
+    }
+
     /// Adds a requisition, rejecting a duplicate id.
     ///
     /// # Errors

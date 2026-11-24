@@ -124,6 +124,50 @@ impl SignOff {
     }
 }
 
+/// The verification verdict for one artefact's approval.
+///
+/// Four states, not three: a signature that does not verify is a *different* and
+/// worse condition than one that is merely missing, and a UI that collapsed them
+/// would show forgery as "unsigned".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+pub enum ArtefactStatus {
+    /// Both roles signed this exact copy, with valid signatures.
+    Valid,
+    /// Both roles signed, but the copy changed since.
+    Stale {
+        /// Why it is stale, one line per role.
+        reasons: Vec<String>,
+    },
+    /// A required role has not signed, or a sign-off carries no signature.
+    Unsigned,
+    /// A signature does not verify against the hash it recorded, or is malformed.
+    Invalid {
+        /// Which roles failed.
+        roles: Vec<String>,
+    },
+}
+
+impl ArtefactStatus {
+    /// Whether this artefact may be dispatched against.
+    pub fn is_valid(&self) -> bool {
+        matches!(self, Self::Valid)
+    }
+}
+
+impl std::fmt::Display for ArtefactStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Valid => formatter.write_str("valid"),
+            Self::Stale { reasons } => write!(formatter, "stale ({})", reasons.join("; ")),
+            Self::Unsigned => formatter.write_str("unsigned"),
+            Self::Invalid { roles } => {
+                write!(formatter, "invalid signature ({})", roles.join(", "))
+            }
+        }
+    }
+}
+
 /// The signatures collected for one piece of static copy.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -224,6 +268,44 @@ impl Approval {
             }
         }
         issues
+    }
+
+    /// The four-state verdict for `current_hash`.
+    ///
+    /// Order matters: a bad signature outranks a missing one, and a missing one
+    /// outranks a stale copy, because that is the order an operator must fix them.
+    pub fn artefact_status(&self, current_hash: &str) -> ArtefactStatus {
+        let mut invalid: Vec<String> = Vec::new();
+        let mut unsigned = false;
+
+        for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
+            match self.latest(role) {
+                None => unsigned = true,
+                Some(sign_off) => match (&sign_off.signature, &sign_off.artefact_hash) {
+                    (None, _) => unsigned = true,
+                    (Some(signature), recorded) => {
+                        let recorded = recorded.clone().unwrap_or_default();
+                        if !signature.verify(&recorded) {
+                            invalid.push(role.to_string());
+                        }
+                    }
+                },
+            }
+        }
+
+        if !invalid.is_empty() {
+            return ArtefactStatus::Invalid { roles: invalid };
+        }
+        if unsigned {
+            return ArtefactStatus::Unsigned;
+        }
+
+        let reasons = self.drift(current_hash);
+        if reasons.is_empty() {
+            ArtefactStatus::Valid
+        } else {
+            ArtefactStatus::Stale { reasons }
+        }
     }
 
     /// Attaches an Ed25519 signature to a role's sign-off.
@@ -355,6 +437,36 @@ mod tests {
                 .iter()
                 .any(|issue| issue.contains("re-approval required"))
         );
+    }
+
+    #[test]
+    fn the_verdict_distinguishes_each_failure() {
+        let mut approval = Approval::default();
+        assert_eq!(approval.artefact_status(HASH_A), ArtefactStatus::Unsigned);
+
+        approval
+            .record("J. Chen", SignOffRole::HiringManager, at(), HASH_A)
+            .expect("hm");
+        approval
+            .record("M. Okafor", SignOffRole::Legal, at(), HASH_A)
+            .expect("legal");
+
+        // Signed, but with no key attached: still unsigned in the strict sense.
+        assert_eq!(approval.artefact_status(HASH_A), ArtefactStatus::Unsigned);
+
+        // A signature that does not verify outranks everything.
+        for sign_off in &mut approval.sign_offs {
+            sign_off.signature = Some(crate::identity::Signed {
+                operator: "j-chen".to_owned(),
+                public_key: "00".repeat(32),
+                digest: HASH_A.to_owned(),
+                signature: "00".repeat(64),
+            });
+        }
+        assert!(matches!(
+            approval.artefact_status(HASH_A),
+            ArtefactStatus::Invalid { .. }
+        ));
     }
 
     #[test]

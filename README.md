@@ -242,6 +242,41 @@ A workspace with no registry is in bootstrap: only `init`, `demo seed` and
 `operator register` run until someone registers, then every mutating command needs
 a role. Dispatch and `purge` take an automatic snapshot into `backups/` first.
 
+### Recruiter workspace (`ledger ui`)
+
+Behind an optional feature so the default build stays the offline CLI:
+
+```bash
+cargo build --release --features ui
+ledger --data pilot --operator rec-rui ui --port 8420
+# prints http://127.0.0.1:8420/?token=<32-byte hex>
+```
+
+* **One operator per process.** The session is bound at launch; identity here is a
+  name plus a `0600` keyfile, not an account, so switching operators is a relaunch.
+* **Token → cookie.** The first `GET /?token=` consumes the token and sets
+  `HttpOnly; SameSite=Strict` `ledger_session`, then 303s to `/`. Every other
+  request needs the cookie (`401` otherwise).
+* **RBAC per request.** Mutations call `Role::permits`, so an auditor gets `403`
+  on `/api/dispose*` and a `200` on `/audit`.
+* **Lock discipline.** Writes take `Store::lock` (`flock`) inside
+  `spawn_blocking`; `Error::Locked` becomes `409` with the holder. Reads take a
+  fresh snapshot and never block on a CLI run.
+* **No assets on the wire.** `tokens.css`, `app.css` and `app.js` are embedded with
+  `include_str!`; nothing is fetched, so it works air-gapped.
+
+| Route | Method | Role | Purpose |
+| --- | --- | --- | --- |
+| `/` | GET | any signed-in | Triage table + four KPI cards |
+| `/api/preview` | POST | any signed-in | Render the email for a disposition |
+| `/api/dispose` | POST | coordinator | Capture one disposition |
+| `/api/dispose/batch` | POST | coordinator | Atomic batch (new + `supersedes`) |
+| `/governance` | GET | any signed-in | 7 artefact verdicts + checklist |
+| `/audit` | GET | any signed-in | Chain check + operator activity |
+
+Not yet wired into the UI: the import column mapper, the `.eml`/zip dispatch
+route, one-click re-approval, the snapshot button, and delivery confirmation.
+
 ### Drafted dispatch (`.eml`)
 
 ```bash
@@ -330,7 +365,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-129 tests cover: the initial-screen hard filter, the three-variant form, superseding
+136 tests (144 with `--features ui`) cover: the initial-screen hard filter, the three-variant form, superseding
 corrections, gate unavailability falling back to `FIELD`, the paragraph lint,
 required template slots, QA enforcement, the chain detecting edits and truncation,
 the five metric bands, the routing order, the fixture's determinism and planted

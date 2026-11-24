@@ -413,6 +413,24 @@ impl DispositionRecord {
     }
 }
 
+/// The current record for an application within a staged batch.
+fn head_of<'a>(
+    requisition: &RequisitionId,
+    application: &ApplicationId,
+    staged: &'a [DispositionRecord],
+) -> Option<&'a DispositionRecord> {
+    staged
+        .iter()
+        .filter(|record| {
+            &record.form.requisition == requisition && &record.form.application_id == application
+        })
+        .find(|record| {
+            !staged
+                .iter()
+                .any(|other| other.form.supersedes.as_ref() == Some(&record.id))
+        })
+}
+
 /// The append-only collection of captured dispositions.
 #[derive(Debug)]
 pub struct Dispositions {
@@ -445,11 +463,52 @@ impl Dispositions {
     /// [`Error::AlreadySuperseded`] when the target is not the head, and
     /// [`Error::SupersedeMismatch`] when the target belongs to another candidate.
     pub fn record(&mut self, form: NewDisposition) -> Result<&DispositionRecord> {
+        self.admit(&form, &[])?;
+        let record = self.stage(form, 0)?;
+        self.log.append(&record)?;
+        self.records.push(record);
+        self.records
+            .last()
+            .ok_or_else(|| Error::invalid("disposition", "captured record disappeared"))
+    }
+
+    /// Captures several dispositions atomically.
+    ///
+    /// Validation runs against the log *plus* the records already staged in this
+    /// batch, so a duplicate application id inside one batch is refused, and a
+    /// `SUPERSEDES` may target a record staged moments earlier. Nothing is written
+    /// unless every form is admissible: the whole batch then lands in one
+    /// `append_batch` (one `write_all`, one `fsync`).
+    ///
+    /// # Errors
+    ///
+    /// Propagates the same errors as [`Dispositions::record`]; in that case the log
+    /// is untouched.
+    pub fn record_batch(&mut self, forms: Vec<NewDisposition>) -> Result<Vec<DispositionRecord>> {
+        let mut staged: Vec<DispositionRecord> = Vec::with_capacity(forms.len());
+        for form in forms {
+            self.admit(&form, &staged)?;
+            let record = self.stage(form, staged.len())?;
+            staged.push(record);
+        }
+        if staged.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.log.append_batch(&staged)?;
+        self.records.extend(staged.iter().cloned());
+        Ok(staged)
+    }
+
+    /// Checks one form against the log and the batch already staged.
+    fn admit(&self, form: &NewDisposition, staged: &[DispositionRecord]) -> Result<()> {
+        let find = |id: &DispositionId| {
+            self.find(id)
+                .or_else(|| staged.iter().find(|record| &record.id == id))
+        };
         match &form.supersedes {
             Some(previous) => {
-                let target = self
-                    .find(previous)
-                    .ok_or_else(|| Error::UnknownDisposition(previous.clone()))?;
+                let target =
+                    find(previous).ok_or_else(|| Error::UnknownDisposition(previous.clone()))?;
                 if target.form.requisition != form.requisition {
                     return Err(Error::invalid(
                         "supersedes",
@@ -466,16 +525,20 @@ impl Dispositions {
                         application: form.application_id.clone(),
                     });
                 }
-                if self
+                let already = self
                     .records
                     .iter()
-                    .any(|record| record.form.supersedes.as_ref() == Some(previous))
-                {
+                    .chain(staged.iter())
+                    .any(|record| record.form.supersedes.as_ref() == Some(previous));
+                if already {
                     return Err(Error::AlreadySuperseded(previous.clone()));
                 }
             }
             None => {
-                if let Some(existing) = self.head(&form.requisition, &form.application_id) {
+                if let Some(existing) = self
+                    .head(&form.requisition, &form.application_id)
+                    .or_else(|| head_of(&form.requisition, &form.application_id, staged))
+                {
                     return Err(Error::DuplicateDisposition {
                         requisition: form.requisition.clone(),
                         application: form.application_id.clone(),
@@ -484,18 +547,17 @@ impl Dispositions {
                 }
             }
         }
+        Ok(())
+    }
 
-        let id = DispositionId::try_from(format!("DSP-{:04}", self.records.len() + 1))?;
-        let record = DispositionRecord {
+    /// Assigns the next `DSP-####` id to a form, without writing it.
+    fn stage(&self, form: NewDisposition, offset: usize) -> Result<DispositionRecord> {
+        let id = DispositionId::try_from(format!("DSP-{:04}", self.records.len() + offset + 1))?;
+        Ok(DispositionRecord {
             id,
             locked: true,
             form,
-        };
-        self.log.append(&record)?;
-        self.records.push(record);
-        self.records
-            .last()
-            .ok_or_else(|| Error::invalid("disposition", "captured record disappeared"))
+        })
     }
 
     /// The current (non-superseded) record for one application.
@@ -712,6 +774,104 @@ mod tests {
 
         let reopened = Dispositions::open(&store).expect("reopen");
         assert_eq!(reopened.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_batch_lands_in_one_append_with_sequential_ids() {
+        let (store, dir) = temp_store("batch");
+        let mut dispositions = Dispositions::open(&store).expect("log");
+        let batch = vec![
+            form("APP-1", Disposition::Field),
+            form("APP-2", Disposition::Field),
+            form("APP-3", Disposition::Field),
+        ];
+        let stored = dispositions.record_batch(batch).expect("batch");
+        assert_eq!(stored.len(), 3);
+        assert_eq!(
+            stored.iter().map(|r| r.id.as_str()).collect::<Vec<&str>>(),
+            vec!["DSP-0001", "DSP-0002", "DSP-0003"]
+        );
+
+        // One record per line, and the file was written once.
+        let text = std::fs::read_to_string(store.path(store::DISPOSITIONS)).expect("read");
+        assert_eq!(text.matches('\n').count(), 3);
+
+        let reopened = Dispositions::open(&store).expect("reopen");
+        assert_eq!(reopened.len(), 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_batch_with_one_bad_form_writes_nothing() {
+        let (store, dir) = temp_store("batch-fail");
+        let mut dispositions = Dispositions::open(&store).expect("log");
+        dispositions
+            .record(form("APP-1", Disposition::Field))
+            .expect("first");
+
+        let before = std::fs::read_to_string(store.path(store::DISPOSITIONS)).expect("read");
+        // APP-1 already has a head, so the whole batch must be refused.
+        let batch = vec![
+            form("APP-2", Disposition::Field),
+            form("APP-1", Disposition::Field),
+            form("APP-3", Disposition::Field),
+        ];
+        assert!(matches!(
+            dispositions.record_batch(batch),
+            Err(Error::DuplicateDisposition { .. })
+        ));
+
+        let after = std::fs::read_to_string(store.path(store::DISPOSITIONS)).expect("read");
+        assert_eq!(before, after, "nothing may be written for a rejected batch");
+        assert_eq!(dispositions.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_batch_cannot_duplicate_an_application_within_itself() {
+        let (store, dir) = temp_store("batch-dup");
+        let mut dispositions = Dispositions::open(&store).expect("log");
+        let batch = vec![
+            form("APP-1", Disposition::Field),
+            form("APP-1", Disposition::Field),
+        ];
+        assert!(matches!(
+            dispositions.record_batch(batch),
+            Err(Error::DuplicateDisposition { .. })
+        ));
+        assert!(dispositions.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_batch_can_supersede_a_record_staged_in_the_same_batch() {
+        let (store, dir) = temp_store("batch-supersede");
+        let mut dispositions = Dispositions::open(&store).expect("log");
+        let first = form("APP-1", Disposition::Field);
+        let second = NewDisposition {
+            supersedes: Some(DispositionId::try_from("DSP-0001").expect("id")),
+            disposition: Disposition::Admin {
+                reason: AdminReason::RequisitionWithdrawn,
+            },
+            signature: None,
+            ..form("APP-1", Disposition::Field)
+        };
+        let stored = dispositions
+            .record_batch(vec![first, second])
+            .expect("batch");
+        assert_eq!(stored.len(), 2);
+        assert_eq!(
+            dispositions
+                .head(
+                    &RequisitionId::try_from("REQ-1").expect("id"),
+                    &ApplicationId::try_from("APP-1").expect("application")
+                )
+                .expect("head")
+                .id
+                .as_str(),
+            "DSP-0002"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

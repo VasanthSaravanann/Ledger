@@ -20,6 +20,25 @@ sha2 = "0.10"
 thiserror = "2"
 unicode-normalization = "0.1"
 
+# The web workspace is optional: `cargo build` stays the offline CLI, and the
+# server-only dependencies are absent unless `--features ui` is passed.
+axum = { version = "0.8", optional = true, default-features = false, features = [
+  "http1",
+  "json",
+  "query",
+  "form",
+  "tokio",
+] }
+tokio = { version = "1", optional = true, features = [
+  "rt-multi-thread",
+  "macros",
+  "net",
+] }
+
+[features]
+default = []
+ui = ["dep:axum", "dep:tokio"]
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_debug_implementations = "warn"

@@ -50,6 +50,10 @@ pub const DEMO_SUMMARY: &str = "demo-summary.json";
 pub const OPERATOR: &str = "operator.jsonl";
 /// The operator registry (public keys and roles).
 pub const OPERATORS: &str = "operators.json";
+/// Saved ATS column-mapping profiles.
+pub const MAPPINGS: &str = "mappings.json";
+/// Append-only delivery confirmations (queued draft → sent).
+pub const DELIVERY: &str = "delivery.jsonl";
 /// The advisory lock file guarding the workspace.
 pub const LOCK: &str = ".lock";
 

@@ -12,6 +12,9 @@ cross-compiled binary is worse than publishing none.
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --locked
+cargo test --locked --features ui     # exercises the web workspace
+cargo clippy --all-targets -- -D warnings          # core must build without ui
+cargo clippy --all-targets --all-features -- -D warnings
 ./verify_log.py /tmp/pilot/send_log.jsonl   # after `ledger demo seed --data /tmp/pilot --record`
 ```
 
