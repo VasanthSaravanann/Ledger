@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { canonical } from "@/lib/site";
 import { TriageWorkspace } from "@/components/triage-workspace";
 export const Route = createFileRoute("/triage")({
   head: () => ({
@@ -16,7 +17,9 @@ export const Route = createFileRoute("/triage")({
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      ...canonical("/triage").meta,
     ],
+    links: canonical("/triage").links,
   }),
   component: TriageWorkspace,
 });

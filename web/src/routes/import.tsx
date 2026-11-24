@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { canonical } from "@/lib/site";
 import { ImportWorkspace } from "@/components/support-workspaces";
 export const Route = createFileRoute("/import")({
   head: () => ({
@@ -12,7 +13,9 @@ export const Route = createFileRoute("/import")({
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      ...canonical("/import").meta,
     ],
+    links: canonical("/import").links,
   }),
   component: ImportWorkspace,
 });

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { canonical } from "@/lib/site";
 import { DispatchWorkspace } from "@/components/support-workspaces";
 export const Route = createFileRoute("/dispatch")({
   head: () => ({
@@ -15,7 +16,9 @@ export const Route = createFileRoute("/dispatch")({
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      ...canonical("/dispatch").meta,
     ],
+    links: canonical("/dispatch").links,
   }),
   component: DispatchWorkspace,
 });
