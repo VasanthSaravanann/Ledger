@@ -1,0 +1,17 @@
+[
+  {
+    "check": "focus-ring",
+    "target": ".focus\\:outline-none",
+    "reason": "Measured in Chrome with the keyboard: Tab computes a 2px solid ring in --primary (oklch(0.49 0.213 264)). The utility is inert; an unlayered :focus-visible rule wins over the utilities layer."
+  },
+  {
+    "check": "focus-ring",
+    "target": ".focus-visible\\:outline-none",
+    "reason": "Same rule, same measurement: `a.matches(':focus-visible')` is true and the computed outline is solid 2px in --primary, so no control loses its ring."
+  },
+  {
+    "check": "placeholder",
+    "target": "careers-feedback@example.com",
+    "reason": "It is not a page contact: it is the reply-to printed inside the sample rejection email, which is the artefact the section exists to show. The page's own links are the workspace and the repository."
+  }
+]

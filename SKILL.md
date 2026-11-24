@@ -289,8 +289,11 @@ the useful part.
 ### Web surface
 
 22. **The public site is the `web/` app, and only that:** `/` is the landing page that
-    explains the pilot (gate copy, chain, the five metric bands, what the tool refuses)
-    and links into the workspace preview at `/triage`. The same app is a UI preview. The Rust artefact
+    explains the pilot (gate copy, chain, the five metric bands, what the tool refuses),
+    shows real captures of the workspace (`web/public/product/`), and links into the
+    preview at `/triage`. The plates are screenshots of the app, so re-shoot them with
+    `node /tmp/shots.mjs`-style CDP capture when a screen changes; they are not generated
+    by the Rust build. The page is a UI preview. The Rust artefact
     generator, the committed pages, `vercel.json` at the root and the drift check were
     removed together; what replaced them is a separate TanStack Start app that Vercel
     builds from `web/`. Do not reintroduce a generator, a `site/` directory or

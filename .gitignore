@@ -11,3 +11,9 @@ web/.wrangler/
 web/.nitro/
 web/.tanstack/
 web/dist/
+# taste-skill checks: keep the waivers, ignore the runs and Chrome profiles
+web/.taste-skill/chrome-*/
+web/.taste-skill/gate/
+web/.taste-skill/gate.json
+web/.taste-skill/build.json
+web/.taste-skill/*.log

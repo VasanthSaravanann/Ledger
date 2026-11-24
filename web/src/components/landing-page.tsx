@@ -2,9 +2,10 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 
 /*
- * The public explainer for the pilot. It shares the workspace's tokens (paper, ink,
- * indigo, pass/warn/fail) but not its chrome: no sidebar, no cards, one document
- * column with a hanging margin that carries citations rather than decoration.
+ * The public explainer for the pilot. It carries the workspace's tokens (paper,
+ * ink, indigo, pass/warn/fail) and its own chrome: no sidebar, one document
+ * column, a hanging margin for citations, and the product's real screens as
+ * plates. Section headings name the thing; nothing is captioned.
  */
 
 const RECORD = [
@@ -31,12 +32,12 @@ const STEPS: { title: string; artifact: string; body: string }[] = [
   {
     title: "Document the requisition",
     artifact: "requisition facts",
-    body: "Role end date, minimum term, the reason for the duration, the regulator, the location. A gate block whose facts are missing is unavailable, so the disposition has to fall back to FIELD instead of inventing a requirement.",
+    body: "Role end date, minimum term, the reason for the duration, the regulator, the location. A gate block whose facts are missing is unavailable, so the disposition falls back to FIELD; nothing invents a requirement.",
   },
   {
     title: "Sign the copy",
     artifact: "signed gate library",
-    body: "Five knockouts, GATE-01 to GATE-05, each carrying a version. Hiring manager and Legal sign every one, and the signature binds to the hash of that copy, so an edit makes the approval stale rather than silently inherited.",
+    body: "Five knockouts, GATE-01 to GATE-05, each carrying a version. Hiring manager and Legal sign every one, and the signature binds to the hash of that copy: an edit makes the approval stale, and it is never silently inherited.",
   },
   {
     title: "Capture the disposition",
@@ -70,8 +71,95 @@ const LIMITS = [
   "No hosted tenancy. The workspace is a directory the team holds, on macOS or Linux.",
 ];
 
+const PARTS = [
+  [
+    "The pilot",
+    "One employer, one requisition, the initial screen, every rejected candidate. No sampling and no opt-in: a pilot that tells only the persuasive candidates is evidence of nothing.",
+  ],
+  [
+    "The record",
+    "A disposition code, the copy version that rendered it, the person who decided, the second person who checked, and the digest of the text.",
+  ],
+  [
+    "The log",
+    "Append-only and hash-chained, readable and verifiable by a script that has no access to the tool and no reason to trust it.",
+  ],
+];
+
 function chunk(hex: string) {
   return hex.replace(/(.{8})/g, "$1 ").trim();
+}
+
+function Plate({ src, alt }: { src: string; alt: string }) {
+  return (
+    <figure className="lp-plate">
+      <img src={src} alt={alt} decoding="async" width={1600} height={1000} />
+    </figure>
+  );
+}
+
+/* Values below are the fixture's own send log: entries 1-3 and the chain head after 147 sends. */
+const CHAIN = [
+  ["SND-000001", "APP-1001", "cd68eb99…5f386a"],
+  ["SND-000002", "APP-1002", "82bb6df8…d1926a"],
+  ["SND-000003", "APP-1003", "1113f56e…1e6e10"],
+  ["chain head", "147 entries", "d347a639…7b6c897b"],
+];
+
+function ChainDiagram() {
+  return (
+    <figure className="lp-plate lp-chain" data-diagram="chain">
+      <svg
+        viewBox="0 0 660 138"
+        role="img"
+        aria-label="Three send-log entries and the chain head, each hashing the entry before it"
+      >
+        <defs>
+          <marker
+            id="lp-arrow"
+            viewBox="0 0 8 8"
+            refX="7"
+            refY="4"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto"
+          >
+            <path d="M0 0 8 4 0 8z" fill="currentColor" />
+          </marker>
+        </defs>
+        {CHAIN.map(([label, detail, hash], index) => {
+          const x = 8 + index * 164;
+          return (
+            <g key={label}>
+              <rect x={x} y={26} width={140} height={58} rx={5} className="lp-chain-node" />
+              <text x={x + 12} y={47} className="lp-chain-label">
+                {label}
+              </text>
+              <text x={x + 12} y={62} className="lp-chain-detail">
+                {detail}
+              </text>
+              <text x={x + 12} y={76} className="lp-chain-hash">
+                {hash}
+              </text>
+              {index < CHAIN.length - 1 && (
+                <line
+                  x1={x + 142}
+                  y1={55}
+                  x2={x + 160}
+                  y2={55}
+                  className="lp-chain-link"
+                  markerEnd="url(#lp-arrow)"
+                />
+              )}
+            </g>
+          );
+        })}
+        <text x={8} y={114} className="lp-chain-note">
+          each send entry hashes the head before it, so an edit anywhere breaks every link after it
+        </text>
+      </svg>
+    </figure>
+  );
 }
 
 export function LandingPage() {
@@ -99,7 +187,7 @@ export function LandingPage() {
 
   return (
     <div className="lp">
-      <header className="lp-bar">
+      <header className="lp-bar wrap">
         <Link to="/" className="lp-word">
           ledger<span>.</span>
         </Link>
@@ -112,25 +200,31 @@ export function LandingPage() {
         </nav>
       </header>
 
-      <main className="lp-main">
-        <section className="lp-hero">
-          <h1>
-            Every rejection
-            <br />
-            leaves a record.
-          </h1>
+      <main className="lp-main wrap">
+        <section className="lp-hero" data-enter>
+          <h1>Candidate feedback your hiring team can defend.</h1>
           <p className="lp-deck">
-            Ledger runs a manual candidate-feedback pilot: one employer, one requisition, everyone
-            rejected at the initial screen told why. The reason is a code a person chose, the copy
-            is text Legal signed, and the log proves the exact words that were sent.
+            Ledger runs a manual feedback pilot: one employer, one requisition, everyone rejected at
+            the initial screen told why. The reason is a code a person chose, the copy is text Legal
+            signed, and the log proves the exact words that were sent.
           </p>
+          <p className="lp-fact">
+            One requisition, 150 candidates: 147 emails recorded, three refused by the circuit
+            breakers before anything left.
+          </p>
+          <div className="lp-actions">
+            <Link to="/triage" className="lp-button">
+              Open the sample workspace
+            </Link>
+            <a className="lp-link" href="#how">
+              See how a rejection is recorded
+            </a>
+          </div>
         </section>
 
         <section className="lp-row lp-record" aria-labelledby="record-title">
           <div className="lp-margin">
-            <h2 id="record-title" className="lp-margin-title">
-              The record
-            </h2>
+            <p className="lp-margin-label">The record</p>
             <dl className="lp-cites">
               {CITATIONS.map(([term, detail]) => (
                 <div key={term}>
@@ -141,144 +235,166 @@ export function LandingPage() {
             </dl>
           </div>
 
-          <div className="lp-doc">
-            <div className="lp-doc-body">
-              {RECORD.map((paragraph) => (
-                <p
-                  key={paragraph}
-                  className={paragraph.startsWith("This role runs") ? "lp-quote" : undefined}
-                >
-                  {paragraph}
-                </p>
-              ))}
-            </div>
-            <div className="lp-doc-foot">
-              <div>
-                <button type="button" className="lp-verify" onClick={verify} disabled={busy}>
-                  {busy ? "Hashing…" : digest ? "Hash it again" : "Hash this text"}
-                </button>
-                <p className="lp-hint">
-                  {failed
-                    ? "This browser would not compute the digest. The chain check itself runs in Rust."
-                    : digest
-                      ? "Recomputed here from the text above. The send log stores this value as text_digest; the chain that links every entry is verified in Rust and in a standalone Python script."
-                      : "Computes SHA-256 over the text above: the same digest the send log stores for every entry."}
+          <div className="lp-body">
+            <h2 id="record-title">The rejection record</h2>
+            <div className="lp-record-stack">
+              <div className="lp-doc">
+                <div className="lp-doc-body">
+                  {RECORD.map((paragraph) => (
+                    <p
+                      key={paragraph}
+                      className={paragraph.startsWith("This role runs") ? "lp-quote" : undefined}
+                    >
+                      {paragraph}
+                    </p>
+                  ))}
+                </div>
+                <div className="lp-doc-foot">
+                  <div>
+                    <button type="button" className="lp-verify" onClick={verify} disabled={busy}>
+                      {busy ? "Hashing…" : digest ? "Hash it again" : "Hash this text"}
+                    </button>
+                    <p className="lp-hint">
+                      {failed
+                        ? "This browser would not compute the digest. The chain check itself runs in Rust."
+                        : digest
+                          ? "Recomputed here from the text above. The send log stores this value as text_digest; the chain that links every entry is verified in Rust and in a standalone Python script."
+                          : "Computes SHA-256 over the text above: the same digest the send log stores for every entry."}
+                    </p>
+                  </div>
+                  <div className="lp-digest" aria-live="polite">
+                    <span className="lp-digest-label">text_digest</span>
+                    {digest ? (
+                      <code>{chunk(digest)}</code>
+                    ) : (
+                      <span className="lp-digest-empty">not computed yet</span>
+                    )}
+                  </div>
+                </div>
+                <p className="lp-doc-note">
+                  A sample record from the fixture: real gate copy, real template, invented
+                  candidate.
                 </p>
               </div>
-              <div className="lp-digest" aria-live="polite">
-                <span className="lp-digest-label">text_digest</span>
-                {digest ? (
-                  <code>{chunk(digest)}</code>
-                ) : (
-                  <span className="lp-digest-empty">not computed yet</span>
-                )}
-              </div>
+              <Plate
+                src="/product/disposition.jpg"
+                alt="The workspace drawer: a locked disposition form beside the candidate's rendered email"
+              />
             </div>
-            <p className="lp-doc-note">
-              A sample record from the fixture: real gate copy, real template, invented candidate.
-            </p>
           </div>
         </section>
 
         <section className="lp-row" id="what" aria-labelledby="what-title">
           <div className="lp-margin">
-            <h2 className="lp-margin-title" id="what-title">
-              What it is
-            </h2>
-          </div>
-          <div className="lp-prose">
-            <p>
-              A rejection is a decision, and decisions of this kind get contested: by the candidate,
-              by a union, by a regulator, by a hiring manager who does not remember the
-              conversation. Ledger is built so that the answer to “why was I rejected, and who
-              decided that?” is a record rather than a recollection.
+            <p className="lp-margin-label">Scope</p>
+            <p className="lp-margin-note">
+              One employer, one requisition, the initial screen, every rejected candidate.
             </p>
-            <dl className="lp-parts">
-              <div>
-                <dt>The pilot</dt>
-                <dd>
-                  One employer, one requisition, the initial screen, every rejected candidate. No
-                  sampling and no opt-in, because a pilot that tells only the persuasive candidates
-                  is not evidence of anything.
-                </dd>
+          </div>
+          <div className="lp-body">
+            <h2 id="what-title">What the pilot records</h2>
+            <div className="lp-split">
+              <div className="lp-prose">
+                <p>
+                  A rejection is a decision, and decisions of this kind get contested: by the
+                  candidate, by a union, by a regulator, by a hiring manager who does not remember
+                  the conversation. Ledger is built so that the answer to “why was I rejected, and
+                  who decided that?” is a record that outlives the conversation.
+                </p>
+                <dl className="lp-parts">
+                  {PARTS.map(([term, detail]) => (
+                    <div key={term}>
+                      <dt>{term}</dt>
+                      <dd>{detail}</dd>
+                    </div>
+                  ))}
+                </dl>
               </div>
-              <div>
-                <dt>The record</dt>
-                <dd>
-                  A disposition code, the copy version that rendered it, the person who decided, the
-                  second person who checked, and the digest of the text.
-                </dd>
-              </div>
-              <div>
-                <dt>The log</dt>
-                <dd>
-                  Append-only and hash-chained, readable and verifiable by a script that has no
-                  access to the tool and no reason to trust it.
-                </dd>
-              </div>
-            </dl>
+              <Plate
+                src="/product/triage.jpg"
+                alt="The triage workspace: candidate queue, four metrics and the disposition filters"
+              />
+            </div>
           </div>
         </section>
 
         <section className="lp-row" id="how" aria-labelledby="how-title">
           <div className="lp-margin">
-            <h2 className="lp-margin-title" id="how-title">
-              How it works
-            </h2>
+            <p className="lp-margin-label">Sequence</p>
             <p className="lp-margin-note">Five steps, in this order, each leaving a file behind.</p>
           </div>
-          <ol className="lp-steps">
-            {STEPS.map((step, index) => (
-              <li key={step.title}>
-                <div className="lp-step-margin">
-                  <span className="lp-step-number">{String(index + 1).padStart(2, "0")}</span>
-                  <span className="lp-step-artifact">{step.artifact}</span>
-                </div>
-                <div className="lp-step-body">
-                  <h3>{step.title}</h3>
-                  <p>{step.body}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
+          <div className="lp-body">
+            <h2 id="how-title">How a rejection is recorded</h2>
+            <div className="lp-split lp-split--wide">
+              <ol className="lp-steps">
+                {STEPS.map((step, index) => (
+                  <li key={step.title}>
+                    <div className="lp-step-margin">
+                      <span className="lp-step-number">{String(index + 1).padStart(2, "0")}</span>
+                      <span className="lp-step-artifact">{step.artifact}</span>
+                    </div>
+                    <div className="lp-step-body">
+                      <h3>{step.title}</h3>
+                      <p>{step.body}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <ChainDiagram />
+            </div>
+          </div>
         </section>
 
         <section className="lp-row" id="why" aria-labelledby="why-title">
           <div className="lp-margin">
-            <h2 className="lp-margin-title" id="why-title">
-              Why it matters
-            </h2>
+            <p className="lp-margin-label">Evidence</p>
+            <p className="lp-margin-note">
+              Read after a hundred sends, against bands fixed in advance.
+            </p>
           </div>
-          <div className="lp-prose">
-            <p>
-              <strong>Most rejections are silent.</strong> A candidate who hears nothing cannot tell
-              a stated rule from a mistake, and an employer who sent nothing cannot show which one
-              it was. Silence protects the employer until the first complaint, then protects nobody.
-            </p>
-            <p>
-              <strong>“Not the right fit” cannot be audited.</strong> A reason that names no
-              requirement cannot be checked, corrected or defended. A gate code points at a sentence
-              in the advertisement and at the evidence that failed it, so the same decision reads
-              the same way to the candidate, to Legal and to a reviewer a year later.
-            </p>
-            <p>
-              <strong>Evidence decays.</strong> Without an append-only record, the account of what
-              was said lives in a sent-items folder and someone’s memory. Ledger keeps the text and
-              its digest in a chain where an edit or a deletion is visible to anyone who kept the
-              last chain head.
-            </p>
+          <div className="lp-body">
+            <h2 id="why-title">Why the record is needed</h2>
+            <div className="lp-split">
+              <div className="lp-prose">
+                <p>
+                  <strong>Most rejections are silent.</strong> A candidate who hears nothing cannot
+                  tell a stated rule from a mistake, and an employer who sent nothing cannot show
+                  which one it was. Silence protects the employer until the first complaint, then
+                  protects nobody.
+                </p>
+                <p>
+                  <strong>“Not the right fit” cannot be audited.</strong> A reason that names no
+                  requirement cannot be checked, corrected or defended. A gate code points at a
+                  sentence in the advertisement and at the evidence that failed it, so the same
+                  decision reads the same way to the candidate, to Legal and to a reviewer a year
+                  later.
+                </p>
+                <p>
+                  <strong>Evidence decays.</strong> Without an append-only record, the account of
+                  what was said lives in a sent-items folder and someone’s memory. Ledger keeps the
+                  text and its digest in a chain where an edit or a deletion is visible to anyone
+                  who kept the last chain head.
+                </p>
+              </div>
+              <Plate
+                src="/product/audit.jpg"
+                alt="The audit trail: chain verification reported as unavailable, with the preview's event log beneath it"
+              />
+            </div>
+          </div>
+        </section>
 
-            <h3 className="lp-subhead">
-              The pilot is judged on five measures, fixed before it started
-            </h3>
-            <p className="lp-lede">
-              Four are numeric and are read after a hundred sends. The fifth is the decision the
-              numbers force.
+        <section className="lp-row" id="bands" aria-labelledby="bands-title">
+          <div className="lp-margin">
+            <p className="lp-margin-label">Measures</p>
+            <p className="lp-margin-note">
+              Four read after a hundred sends; the fifth is a decision.
             </p>
+          </div>
+          <div className="lp-body">
+            <h2 id="bands-title">How the pilot is judged</h2>
             <table className="lp-bands">
-              <caption className="lp-visually-hidden">
-                Pre-registered metric bands for the pilot
-              </caption>
+              <caption>Pre-registered metric bands for the pilot</caption>
               <thead>
                 <tr>
                   <th scope="col">Measure</th>
@@ -299,55 +415,73 @@ export function LandingPage() {
               </tbody>
             </table>
             <p className="lp-footnote">
-              Criteria feasibility is agreed in one session, agreed with external input, or not
-              agreed at all. If it is not agreed, the pilot stops and validates the criteria before
-              it sends another email.
+              Criteria feasibility is the fifth measure: agreed in one session, agreed with external
+              input, or not agreed at all. If it is not agreed, the pilot stops and validates the
+              criteria before it sends another email.
             </p>
           </div>
         </section>
 
         <section className="lp-row" id="limits" aria-labelledby="limits-title">
           <div className="lp-margin">
-            <h2 className="lp-margin-title" id="limits-title">
-              What it refuses
-            </h2>
-          </div>
-          <div className="lp-prose">
-            <p>
-              The scope is small on purpose. Each line below is a decision that makes the rest of
-              the tool easier to defend.
+            <p className="lp-margin-label">Boundaries</p>
+            <p className="lp-margin-note">
+              Each line below makes the rest of the tool easier to defend.
             </p>
-            <ul className="lp-limits">
-              {LIMITS.map((limit) => (
-                <li key={limit}>{limit}</li>
-              ))}
-            </ul>
+          </div>
+          <div className="lp-body">
+            <h2 id="limits-title">What the tool refuses</h2>
+            <div className="lp-split">
+              <ul className="lp-limits">
+                {LIMITS.map((limit) => (
+                  <li key={limit}>{limit}</li>
+                ))}
+              </ul>
+              <Plate
+                src="/product/dispatch.jpg"
+                alt="The dispatch queue: drafts listed as queued, with the note that nothing is sent automatically"
+              />
+            </div>
           </div>
         </section>
 
-        <section className="lp-cta" aria-labelledby="cta-title">
-          <h2 id="cta-title">Walk through the workspace</h2>
-          <p>
-            The interface you can open here is a preview with forty-eight synthetic candidates and a
-            session that ends when the tab does. It shows the shape of the job: triage, disposition,
-            second check, dispatch, governance, audit.
-          </p>
-          <div className="lp-cta-actions">
-            <Link to="/triage" className="lp-button">
-              Open the sample workspace
-            </Link>
-            <a className="lp-link" href="https://github.com/VasanthSaravanann/Ledger">
-              Read the source
-            </a>
+        <section className="lp-row lp-cta" id="start" aria-labelledby="cta-title">
+          <div className="lp-margin">
+            <p className="lp-margin-label">Preview</p>
+            <p className="lp-margin-note">Forty-eight synthetic candidates, session only.</p>
           </div>
-          <p className="lp-cta-note">
-            It is a preview, not the ledger. Nothing here is signed, chained or persisted; the Rust
-            command line tool is what records a real disposition.
-          </p>
+          <div className="lp-body">
+            <h2 id="cta-title">Walk through the workspace</h2>
+            <div className="lp-split">
+              <div className="lp-prose">
+                <p>
+                  The interface you can open here is a preview: the roster is generated, the session
+                  ends when the tab does, and nothing is signed or persisted. It shows the shape of
+                  the job, from triage to governance.
+                </p>
+                <div className="lp-actions">
+                  <Link to="/triage" className="lp-button">
+                    Open the sample workspace
+                  </Link>
+                  <a className="lp-link" href="https://github.com/VasanthSaravanann/Ledger">
+                    Read the source
+                  </a>
+                </div>
+                <p className="lp-cta-note">
+                  It is a preview; the ledger is the Rust command line tool, and it is what records
+                  a real disposition.
+                </p>
+              </div>
+              <Plate
+                src="/product/governance.jpg"
+                alt="The governance screen: five hash-bound artefacts, all unsigned, above the operational checklist"
+              />
+            </div>
+          </div>
         </section>
       </main>
 
-      <footer className="lp-footer">
+      <footer className="lp-footer wrap">
         <nav aria-label="Workspace">
           <Link to="/triage">Triage</Link>
           <Link to="/import">Import</Link>
