@@ -39,6 +39,8 @@ pub const REVIEW: &str = "review.json";
 pub const CHECKLIST: &str = "checklist.json";
 /// File holding the go/no-go thresholds.
 pub const POLICY: &str = "policy.json";
+/// File holding the deterministic fixture's summary.
+pub const DEMO_SUMMARY: &str = "demo-summary.json";
 
 /// The pilot workspace.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -20,10 +20,13 @@
 //! - [`policy`] records retention and the escalation owner.
 //! - [`checklist`] tracks the operational tasks that a person, not a program,
 //!   has to sign off.
+//! - [`demo`] builds the deterministic synthetic fixture, and [`site`] writes the
+//!   artefact pages from the loaded workspace at build time.
 
 pub mod approval;
 pub mod ats;
 pub mod checklist;
+pub mod demo;
 pub mod digest;
 pub mod disposition;
 pub mod error;
@@ -38,6 +41,7 @@ pub mod policy;
 pub mod qa;
 pub mod requisition;
 pub mod review;
+pub mod site;
 pub mod store;
 pub mod template;
 pub mod text;

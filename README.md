@@ -1,7 +1,8 @@
 # Ledger
 
 Audit-grade candidate feedback pilot, implemented in Rust. The operational spec is
-[`V2.md`](V2.md); the earlier v1 scope is [`plan.md`](plan.md).
+[`V2.md`](V2.md); the site and demo-fixture spec is [`V3.md`](V3.md); the earlier v1
+scope is [`plan.md`](plan.md).
 
 The point of the tool is that V2's constraints are not review instructions — they
 are types, lint rules, and append-only logs.
@@ -82,6 +83,39 @@ ledger review criteria --data pilot --requisition REQ-2026-014 --status agreed-o
 ledger review route --data pilot --requisition REQ-2026-014
 ```
 
+## Demo fixture and artefact site (V3)
+
+Everything on the site is generated from the CLI at build time, from a deterministic
+fixture. Nothing on it is pilot data.
+
+```bash
+# Deterministic fixture: 151 CSV rows, 150 roster rows, 12 GATE / 129 FIELD / 8 ADMIN,
+# 1 missing disposition, 1 gate/ATS contradiction, 1 missing QA, 1 dropped at import.
+ledger demo seed --data pilot --force            # pre-dispatch: preview shows 3 blocked
+ledger dispatch --data pilot --requisition REQ-2026-014 --preview
+
+# Recorded variant for the site, including the GATE-02 version bump:
+ledger demo seed --data pilot --force --record
+
+# Write the artefact pages straight from the loaded workspace.
+ledger dispatch --data pilot --requisition REQ-2026-014 --preview --export-html site
+```
+
+`scripts/build-site.sh` runs the seed and the export, and records `site/demo.cast`
+when `asciinema` is installed. The fixture is byte-deterministic: two seeds in two
+directories produce the same fingerprint and the same log head, which the test suite
+asserts.
+
+| Route | Page |
+| --- | --- |
+| `/emails` | Templates A/B/C exactly as a candidate receives them |
+| `/gates` | Five blocks, versions, and fact dependencies |
+| `/audit` | Valid chain and the one-byte-altered chain side by side |
+| `/comparative` | Four elicitation questions, approved paragraph, rejected drafts |
+| `/demo` | Scripted terminal run, 3 blocked of 150, verify PASS → tamper → FAIL |
+
+Every page carries `Synthetic fixture — no pilot data yet`.
+
 ## ATS export schema
 
 ```csv
@@ -138,6 +172,7 @@ criteria validation**.
 
 ## Workspace files
 
+`demo-summary.json`, `demo-ats.csv`,
 `gate_library.json`, `templates.json`, `playbook.json`, `requisitions.json`,
 `roster-<REQ>.json`, `dispositions.jsonl`, `qa.jsonl`, `send_log.jsonl`,
 `blocked.jsonl`, `replies.jsonl`, `signals.jsonl`, `review.json`,
@@ -153,10 +188,11 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-78 tests cover: the initial-screen hard filter, the three-variant form, superseding
+82 tests cover: the initial-screen hard filter, the three-variant form, superseding
 corrections, gate unavailability falling back to `FIELD`, the paragraph lint,
 required template slots, QA enforcement, the chain detecting edits and truncation,
-the five metric bands, and the routing order.
+the five metric bands, the routing order, and the fixture's determinism and planted
+failure cases.
 
 ## What the tool does not do
 

@@ -56,6 +56,9 @@ struct Cli {
 enum Command {
     /// Seed the workspace: gate copy, templates, playbook, policy.
     Init,
+    /// Build the deterministic synthetic fixture (no pilot data).
+    #[command(subcommand)]
+    Demo(DemoCommand),
     /// Show the task sheet and the evidence the workspace holds.
     Status(StatusArgs),
     /// Show or set retention and the escalation owner.
@@ -101,6 +104,22 @@ enum Command {
     /// Sign off plan tasks.
     #[command(subcommand)]
     Checklist(ChecklistCommand),
+}
+
+#[derive(Debug, Subcommand)]
+enum DemoCommand {
+    /// Build the deterministic fixture for REQ-2026-014.
+    Seed(DemoSeedArgs),
+}
+
+#[derive(Debug, Args)]
+struct DemoSeedArgs {
+    /// Replace an existing pilot in this workspace.
+    #[arg(long)]
+    force: bool,
+    /// Also commit the sends and the GATE-02 version bump (for the site build).
+    #[arg(long)]
+    record: bool,
 }
 
 #[derive(Debug, Args)]
@@ -404,6 +423,9 @@ struct DispatchArgs {
     /// DELIVERY_STATUS to record: queued, sent, or failed.
     #[arg(long, default_value = "sent")]
     status: String,
+    /// Write the build-time artefact pages into this directory.
+    #[arg(long, value_name = "DIR")]
+    export_html: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -537,6 +559,7 @@ fn execute(cli: Cli) -> Result<()> {
 fn run(store: &Store, command: Command) -> Result<()> {
     match command {
         Command::Init => init(store),
+        Command::Demo(DemoCommand::Seed(args)) => demo_seed(store, &args),
         Command::Status(args) => status(store, &args),
         Command::Governance(command) => governance(store, command),
         Command::Gate(command) => gate(store, command),
@@ -1228,7 +1251,12 @@ fn qa(store: &Store, command: QaCommand) -> Result<()> {
             let dispositions = Dispositions::open(store)?;
             let record = dispositions
                 .head(&requisition, &application)
-                .ok_or_else(|| Error::UnknownApplication(application.clone()))?;
+                .ok_or_else(|| {
+                    Error::invalid(
+                        "qa",
+                        format!("{application} has no disposition record to check"),
+                    )
+                })?;
             let scope = match &record.form.disposition {
                 Disposition::Gate { .. } => QaScope::GateFullCheck,
                 _ => QaScope::RandomTenPercent,
@@ -1319,6 +1347,60 @@ fn dispatch_command(store: &Store, args: &DispatchArgs) -> Result<()> {
         &mut blocked_log,
     )?;
     print_dispatch_report(&report, mode);
+
+    if let Some(dir) = &args.export_html {
+        let export = ledger::site::export_html(store, dir)?;
+        println!("\nwrote {} pages to {}", export.pages.len(), dir.display());
+        println!(
+            "audit: untouched log verifies = {}, one-byte tamper detected = {}",
+            export.audit_valid, export.audit_tampered_detected
+        );
+    }
+    Ok(())
+}
+
+fn demo_seed(store: &Store, args: &DemoSeedArgs) -> Result<()> {
+    let summary = ledger::demo::seed(store, args.force, args.record)?;
+    println!("synthetic fixture — no pilot data yet");
+    println!("requisition:        {}", summary.requisition);
+    println!("CSV rows:           {}", summary.csv_rows);
+    println!("roster rows:        {}", summary.roster_rows);
+    println!("dropped at import:  {}", summary.dropped_at_import);
+    println!(
+        "dispositions:       GATE {}, FIELD {}, ADMIN {}, missing 1",
+        summary
+            .dispositions
+            .get(&DispositionKind::Gate)
+            .copied()
+            .unwrap_or_default(),
+        summary
+            .dispositions
+            .get(&DispositionKind::Field)
+            .copied()
+            .unwrap_or_default(),
+        summary
+            .dispositions
+            .get(&DispositionKind::Admin)
+            .copied()
+            .unwrap_or_default(),
+    );
+    println!(
+        "preview:            {} would send, {} blocked",
+        summary.preview_sends, summary.preview_blocked
+    );
+    for reason in &summary.blocked_reasons {
+        println!("  - {reason}");
+    }
+    if summary.recorded {
+        println!("emails committed:   {}", summary.sends);
+        println!("blocked:            {}", summary.blocked);
+        println!("stale versions:     {}", summary.stale_versions);
+    } else {
+        println!("recorded:           no (run dispatch to commit the sends)");
+    }
+    println!("log head:           {}", summary.log_head);
+    println!("fingerprint:        {}", summary.fingerprint);
+    println!("ATS export:         {}", summary.csv_path.display());
     Ok(())
 }
 

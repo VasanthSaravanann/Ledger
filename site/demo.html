@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Ledger — Recorded run</title>
+<style>
+:root{--bg:#fbfbfa;--fg:#17181a;--muted:#5f646b;--line:#dcdcd7;--card:#fff;--accent:#1a4fd6;--code:#f2f2ee;--warn:#8a5a00;--fail:#a51b1b;--pass:#1c6b3a}
+@media (prefers-color-scheme:dark){:root{--bg:#111214;--fg:#e8e8e4;--muted:#9aa0a6;--line:#2b2d31;--card:#17191c;--accent:#8fb0ff;--code:#1c1f23;--warn:#e0a44a;--fail:#ff8a8a;--pass:#7fd6a0}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:76ch;margin:0 auto;padding:2.5rem 1.25rem 4rem}
+.banner{display:inline-block;margin:0 0 1.25rem;padding:.3rem .6rem;border:1px solid var(--warn);border-radius:6px;color:var(--warn);font-size:.8125rem;letter-spacing:.02em}
+nav{display:flex;flex-wrap:wrap;gap:.35rem 1rem;margin:0 0 2rem;padding-bottom:.75rem;border-bottom:1px solid var(--line);font-size:.875rem}
+nav a{color:var(--accent);text-decoration:none}
+nav a.active{color:var(--fg);font-weight:600}
+h1{margin:0 0 .5rem;font-size:clamp(1.6rem,4vw,2.1rem);line-height:1.2;letter-spacing:-.02em}
+h2{margin:2.5rem 0 .75rem;font-size:1.1rem}
+h3{margin:1.75rem 0 .4rem;font-size:.95rem}
+p{margin:0 0 .85rem}
+.lede{color:var(--muted);margin-bottom:2rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1rem 1.15rem;margin:0 0 1rem}
+.mono,pre,code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:.8125rem}
+pre{margin:0;padding:.9rem 1rem;background:var(--code);border:1px solid var(--line);border-radius:8px;overflow-x:auto;line-height:1.55;white-space:pre-wrap}
+table{width:100%;border-collapse:collapse;font-size:.8125rem;margin:0 0 1rem}
+th,td{text-align:left;padding:.45rem .5rem .45rem 0;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+.tag{display:inline-block;padding:.05rem .4rem;border:1px solid var(--line);border-radius:4px;font-size:.75rem;color:var(--muted)}
+.pass{color:var(--pass);font-weight:600}
+.fail{color:var(--fail);font-weight:600}
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr))}
+.meta{color:var(--muted);font-size:.8125rem}
+ul{margin:0 0 1rem;padding-left:1.2rem}
+li{margin-bottom:.35rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.8125rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+<p class="banner">Synthetic fixture — no pilot data yet</p>
+<nav><a href="/">Overview</a><a href="/emails">Candidate emails</a><a href="/gates">Gate library</a><a href="/audit">Hash-chain audit</a><a href="/comparative">Comparative paragraph</a><a href="/demo" class="active">Recorded run</a></nav>
+<h1>Recorded terminal run</h1><p class="lede">An appendix for technical reviewers: the exact command sequence against the synthetic fixture, generated from a scripted run during site build. It is not a live demo, and the numbers are the fixture's own.</p><pre>$ ledger demo seed --data pilot
+synthetic fixture — no pilot data yet
+requisition:        REQ-2026-014
+CSV rows:           151 (1 dropped past the initial screen)
+roster rows:        150
+dispositions:       GATE 12, FIELD 129, ADMIN 8, missing 1
+QA checks recorded: 31
+
+$ ledger dispatch --preview --requisition REQ-2026-014
+preview: 147 email(s) would send
+blocked 3
+  - answer-mismatch:GATE-02
+  - awaiting-qa:random-ten-percent
+  - missing-disposition
+
+$ ledger qa record --requisition REQ-2026-014 --application APP-1150 --qa qa-patel
+error: qa: APP-1150 has no disposition record to check
+
+$ ledger dispatch --requisition REQ-2026-014
+sent 147
+blocked 3
+
+$ ledger log verify
+send log verified: 147 entries
+head: eb90f8fb66d3577a
+
+$ printf 'X' | dd of=pilot/send_log.jsonl bs=1 seek=120 count=1 conv=notrunc
+1+0 records in
+1+0 records out
+
+$ ledger log verify
+error: send log is corrupt at entry 0: entry hash does not cover the stored fields
+</pre><h2>What the run proves</h2><ul><li><strong>3 blocked</strong> of 150: one missing disposition, one gate/ATS contradiction, one missing QA check.</li><li><strong>1 dropped</strong> at import by the initial-screen filter.</li><li><strong>1 stale</strong> <code>TEXT_VERSION</code> if the fixture was recorded after the GATE-02 bump.</li><li><strong>verify PASS</strong>, then <strong>FAIL</strong> after a single byte change.</li></ul><h2>Reproduce it</h2><pre>cargo build --release
+./target/release/ledger demo seed --data /tmp/pilot --force
+./target/release/ledger dispatch --data /tmp/pilot --requisition REQ-2026-014 --preview
+./target/release/ledger log verify --data /tmp/pilot</pre>
+<footer>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</footer>
+</div>
+</body>
+</html>
