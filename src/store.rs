@@ -48,6 +48,8 @@ pub const POLICY: &str = "policy.json";
 pub const DEMO_SUMMARY: &str = "demo-summary.json";
 /// Append-only operator action log.
 pub const OPERATOR: &str = "operator.jsonl";
+/// The operator registry (public keys and roles).
+pub const OPERATORS: &str = "operators.json";
 /// The advisory lock file guarding the workspace.
 pub const LOCK: &str = ".lock";
 
@@ -64,6 +66,24 @@ pub fn ensure_dir(path: &Path) -> Result<()> {
         source,
     })?;
     restrict(path, 0o700)
+}
+
+/// Writes a secret with `0600`, creating the file if needed.
+pub fn write_secret(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+    let mut file = File::create(path).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    restrict(path, 0o600)?;
+    file.write_all(bytes).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    file.sync_all().map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 /// Sets file permissions to `0600` (or the mode given) on Unix; no-op elsewhere.

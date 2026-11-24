@@ -179,6 +179,17 @@ pub enum Error {
         holder: String,
     },
 
+    /// The active operator's role does not permit this command.
+    #[error("operator {operator} ({role}) may not run `{command}`")]
+    Forbidden {
+        /// The operator.
+        operator: String,
+        /// Their role.
+        role: String,
+        /// The command they attempted.
+        command: String,
+    },
+
     /// Dispatch committed nothing because every attempt was blocked.
     #[error("{count} attempt(s) were blocked by the circuit-breakers; nothing was sent")]
     Blocked {
@@ -227,6 +238,7 @@ impl Error {
     pub fn exit_code(&self) -> u8 {
         match self {
             Self::Blocked { .. } => 2,
+            Self::Forbidden { .. } => 3,
             Self::Locked { .. } => 4,
             Self::Invalid { .. }
             | Self::UnknownRequisition(_)

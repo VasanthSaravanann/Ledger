@@ -38,12 +38,11 @@ fn ledger() -> &'static str {
 
 fn dispatch(store: &Store, abort_after: Option<usize>) -> std::process::Output {
     let mut command = Command::new(ledger());
-    command.arg("--data").arg(store.root()).args([
-        "dispatch",
-        "--requisition",
-        REQUISITION,
-        "--allow-blocked",
-    ]);
+    command
+        .arg("--data")
+        .arg(store.root())
+        .args(["--operator", "qa-patel"])
+        .args(["dispatch", "--requisition", REQUISITION, "--allow-blocked"]);
     if let Some(limit) = abort_after {
         command.env("LEDGER_ABORT_AFTER_SENDS", limit.to_string());
     }
@@ -90,7 +89,10 @@ fn a_killed_dispatch_resumes_without_duplicates() {
     assert_eq!(
         committed.len(),
         70,
-        "each send was fsynced before the abort"
+        "each send was fsynced before the abort; status {:?}; stdout {}; stderr {}",
+        killed.status,
+        String::from_utf8_lossy(&killed.stdout),
+        String::from_utf8_lossy(&killed.stderr)
     );
     assert!(verify(&store).status.success(), "the chain still verifies");
 
@@ -152,12 +154,12 @@ fn a_torn_tail_blocks_restart_until_it_is_quarantined() {
         .arg("--data")
         .arg(store.root())
         .args([
+            "--operator",
+            "qa-patel",
             "log",
             "quarantine",
             "--reason",
             "killed between write and newline",
-            "--operator",
-            "qa-patel",
             "--yes",
         ])
         .output()

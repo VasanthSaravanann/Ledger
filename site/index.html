@@ -308,6 +308,36 @@
         </tbody>
       </table>
 
+      <h2>Who can do what</h2>
+      <p class="lede" style="margin-bottom: 1rem">
+        Every operator is an Ed25519 keypair and every disposition is signed by the
+        key that authorised it. The chain proves the log is unedited; the signatures
+        prove who decided what.
+      </p>
+      <table>
+        <caption>Synthetic fixture — five registered operators.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Role</th>
+            <th scope="col">May run</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>coordinator</code></td>
+            <td>import, dispose, QA, dispatch, reply, signal, anchor</td>
+          </tr>
+          <tr>
+            <td><code>approver</code></td>
+            <td>sign off copy, governance, purge, migrate, register operators</td>
+          </tr>
+          <tr>
+            <td><code>auditor</code></td>
+            <td>read-only: verify, metrics, find, verify-signatures</td>
+          </tr>
+        </tbody>
+      </table>
+
       <h2>Run it</h2>
       <p class="lede" style="margin-bottom: 1rem">
         One sequence, copy-pasteable. Every approval below is collected from both the Hiring

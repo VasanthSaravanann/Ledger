@@ -49,29 +49,31 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:v
 Usage: ledger [OPTIONS] &lt;COMMAND&gt;
 
 Commands:
-  init         Seed the workspace: gate copy, templates, playbook, policy
-  demo         Build the deterministic synthetic fixture (no pilot data)
-  status       Show the task sheet and the evidence the workspace holds
-  governance   Show or set retention and the escalation owner
-  gate         Inspect, approve, and version the Tier 0 gate copy
-  requisition  Create, document, approve, and inspect requisitions
-  templates    Inspect and approve the three master templates
-  playbook     Inspect and approve the five reply scripts
-  ats          Import the ATS export
-  disposition  Capture, correct, and list dispositions
-  qa           Record the second-person QA check
-  dispatch     Render and dispatch feedback under the circuit-breakers
-  log          Verify or export the send log
-  reply        Record candidate replies
-  signal       Record candidate-value signals
-  metrics      Compute the five metrics
-  review       Record criteria feasibility and compute the v2 routing
-  checklist    Sign off plan tasks
-  purge        Enforce retention: tombstone expired PII
-  migrate      Snapshot the workspace and migrate its schema
-  anchor       Publish the chain head as an off-host receipt
-  find         Resolve a redacted #hash handle back to its record
-  help         Print this message or the help of the given subcommand(s)
+  init               Seed the workspace: gate copy, templates, playbook, policy
+  demo               Build the deterministic synthetic fixture (no pilot data)
+  status             Show the task sheet and the evidence the workspace holds
+  governance         Show or set retention and the escalation owner
+  gate               Inspect, approve, and version the Tier 0 gate copy
+  requisition        Create, document, approve, and inspect requisitions
+  templates          Inspect and approve the three master templates
+  playbook           Inspect and approve the five reply scripts
+  ats                Import the ATS export
+  disposition        Capture, correct, and list dispositions
+  qa                 Record the second-person QA check
+  dispatch           Render and dispatch feedback under the circuit-breakers
+  log                Verify or export the send log
+  reply              Record candidate replies
+  signal             Record candidate-value signals
+  metrics            Compute the five metrics
+  review             Record criteria feasibility and compute the v2 routing
+  checklist          Sign off plan tasks
+  purge              Enforce retention: tombstone expired PII
+  migrate            Snapshot the workspace and migrate its schema
+  anchor             Publish the chain head as an off-host receipt
+  find               Resolve a redacted #hash handle back to its record
+  operator           Register and inspect operator identities
+  verify-signatures  Re-check every disposition&#39;s operator signature
+  help               Print this message or the help of the given subcommand(s)
 
 Options:
       --data &lt;DIR&gt;
@@ -81,6 +83,9 @@ Options:
 
       --debug-ids
           Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+
+      --operator &lt;NAME&gt;
+          The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
 
   -h, --help
           Print help (see a summary with &#39;-h&#39;)
@@ -94,9 +99,10 @@ Seed the workspace: gate copy, templates, playbook, policy
 Usage: ledger init [OPTIONS]
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger demo --help
 Build the deterministic synthetic fixture (no pilot data)
@@ -108,9 +114,10 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger status --help
 Show the task sheet and the evidence the workspace holds
@@ -121,6 +128,7 @@ Options:
       --data &lt;DIR&gt;                 Pilot workspace directory [default: ledger-data]
       --requisition &lt;REQUISITION&gt;  Restrict the evidence summary to one requisition
       --debug-ids                  Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;            The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
   -h, --help                       Print help
 
 $ ledger governance --help
@@ -134,9 +142,10 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger gate --help
 Inspect, approve, and version the Tier 0 gate copy
@@ -150,9 +159,10 @@ Commands:
   help          Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger requisition --help
 Create, document, approve, and inspect requisitions
@@ -169,9 +179,10 @@ Commands:
   help         Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger templates --help
 Inspect and approve the three master templates
@@ -184,9 +195,10 @@ Commands:
   help     Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger playbook --help
 Inspect and approve the five reply scripts
@@ -200,9 +212,10 @@ Commands:
   help     Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger ats --help
 Import the ATS export
@@ -214,9 +227,10 @@ Commands:
   help    Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger disposition --help
 Capture, correct, and list dispositions
@@ -230,9 +244,10 @@ Commands:
   help     Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger qa --help
 Record the second-person QA check
@@ -245,9 +260,10 @@ Commands:
   help    Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger dispatch --help
 Render and dispatch feedback under the circuit-breakers
@@ -259,6 +275,7 @@ Options:
       --requisition &lt;REQUISITION&gt;  
       --debug-ids                  Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
       --preview                    Render and report without writing either log
+      --operator &lt;NAME&gt;            The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
       --status &lt;STATUS&gt;            DELIVERY_STATUS to record: queued, sent, or failed [default: sent]
       --export-html &lt;DIR&gt;          Write the build-time artefact pages into this directory
       --json                       Print the run as JSON
@@ -277,9 +294,10 @@ Commands:
   help        Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger reply --help
 Record candidate replies
@@ -291,9 +309,10 @@ Commands:
   help    Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger signal --help
 Record candidate-value signals
@@ -305,9 +324,10 @@ Commands:
   help    Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger metrics --help
 Compute the five metrics
@@ -319,6 +339,7 @@ Options:
       --requisition &lt;REQUISITION&gt;  
       --debug-ids                  Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
       --json                       Print as JSON
+      --operator &lt;NAME&gt;            The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
   -h, --help                       Print help
 
 $ ledger review --help
@@ -332,9 +353,10 @@ Commands:
   help      Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger checklist --help
 Sign off plan tasks
@@ -347,9 +369,10 @@ Commands:
   help  Print this message or the help of the given subcommand(s)
 
 Options:
-      --data &lt;DIR&gt;  Pilot workspace directory [default: ledger-data]
-      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-  -h, --help        Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 $ ledger purge --help
 Enforce retention: tombstone expired PII
@@ -397,14 +420,15 @@ Resolve a redacted #hash handle back to its record
 Usage: ledger find [OPTIONS] --hash &lt;HASH&gt;
 
 Options:
-      --data &lt;DIR&gt;   Pilot workspace directory [default: ledger-data]
-      --hash &lt;HASH&gt;  The handle printed in an error, for example #a1b2c3d4
-      --debug-ids    Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
-      --json         
-  -h, --help         Print help
+      --data &lt;DIR&gt;       Pilot workspace directory [default: ledger-data]
+      --hash &lt;HASH&gt;      The handle printed in an error, for example #a1b2c3d4
+      --debug-ids        Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --json             
+      --operator &lt;NAME&gt;  The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
+  -h, --help             Print help
 
 </pre>
-<footer><p class="mono">build 24145c9 · generated 2026-11-24T19:31:21+11:00 · fixture #01afd645045c…</p><p>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</p></footer>
+<footer><p class="mono">build c7cc82d · generated 2026-11-24T19:37:12+11:00 · fixture #1032f2595a08…</p><p>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</p></footer>
 </div>
 </body>
 </html>

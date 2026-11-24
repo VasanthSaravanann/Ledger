@@ -213,6 +213,33 @@ commit.
 | `3` | invalid input, schema or state (including a torn log tail) |
 | `4` | workspace lock contention |
 
+### Operators, roles and signatures
+
+```bash
+ledger operator register --data pilot --name rec-rui --role coordinator
+ledger operator register --data pilot --name j-chen  --role approver
+ledger operator list --data pilot
+ledger --operator rec-rui disposition record ...      # signed by rec-rui
+ledger verify-signatures --data pilot                # re-checks every signature
+```
+
+Each operator is an Ed25519 keypair: the public half in `operators.json`, the secret
+half in `operators/<name>.key` at `0600`. Dispositions are signed over a canonical
+digest of the record, so a later reader can tell who authorised a decision without
+trusting the file. Signatures live **outside** the send-log digest: the chain proves
+the log is unedited, signatures prove who decided what. `verify_log.py` reports
+"signatures not checked"; `ledger verify-signatures` does that in Rust.
+
+| Role | May run (read-only commands are open to all) |
+| --- | --- |
+| `coordinator` | `ats import`, `disposition`, `qa`, `dispatch`, `reply`, `signal`, `anchor`, `log` |
+| `approver` | `gate`, `templates`, `playbook`, `requisition`, `governance`, `purge`, `migrate`, `checklist`, `init`, `operator` |
+| `auditor` | read-only only: `status`, `metrics`, `log verify/export`, `find`, `verify-signatures` |
+
+A workspace with no registry is in bootstrap: only `init`, `demo seed` and
+`operator register` run until someone registers, then every mutating command needs
+a role. Dispatch and `purge` take an automatic snapshot into `backups/` first.
+
 ### Retention, migration and anchoring
 
 | Command | What it does |
@@ -289,7 +316,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-111 tests cover: the initial-screen hard filter, the three-variant form, superseding
+115 tests cover: the initial-screen hard filter, the three-variant form, superseding
 corrections, gate unavailability falling back to `FIELD`, the paragraph lint,
 required template slots, QA enforcement, the chain detecting edits and truncation,
 the five metric bands, the routing order, the fixture's determinism and planted

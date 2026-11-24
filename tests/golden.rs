@@ -23,10 +23,10 @@ const SEND_LOG_SHA256: &str = "d9acaeb0df07c6e00b8a219e798556b553a079519be2a5499
 
 /// SHA-256 of `dispositions.jsonl` byte-for-byte.
 const DISPOSITIONS_SHA256: &str =
-    "15a38f6f58723dd33ea77627e321aaafdac6e49e5f1d32d482d932f5ea5b40fa";
+    "147f6b2b00f026f1ed873a31011e3a5b86303cd556d0e6e4bd49ca38e10b5888";
 
 /// SHA-256 over every workspace file except `demo-summary.json`.
-const FINGERPRINT: &str = "01afd645045c3984b635f4c8795c5dc2fcdb30255568482d956d9684550fffdb";
+const FINGERPRINT: &str = "1032f2595a08b08be0e834885a66c90a2a141119ab012daf9f2eb6bda80f0a39";
 
 const SENDS: usize = 147;
 const BLOCKED: usize = 3;

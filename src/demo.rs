@@ -28,6 +28,7 @@ use crate::disposition::{
 use crate::error::{Error, Result};
 use crate::gate::{FactKey, GateAnswer, GateKind, GateLibrary};
 use crate::id::{DecisionMakerId, Mailbox, QaId, RecruiterId, RequisitionId, TextVersion};
+use crate::identity::{Registry, Role};
 use crate::log::{BlockReason, BlockedLog, DeliveryStatus, SendLog};
 use crate::pipeline::{Dispatch, Mode, dispatch};
 use crate::playbook::Playbook;
@@ -142,6 +143,20 @@ pub fn seed(store: &Store, force: bool, record: bool) -> Result<DemoSummary> {
     }
     reset(store)?;
 
+    // Operators: deterministic keys so the fixture is reproducible. Real
+    // deployments use `ledger operator register`, which generates from CSPRNG.
+    let mut registry = Registry::default();
+    for (name, role) in [
+        ("rec-rui", Role::Coordinator),
+        ("qa-patel", Role::Coordinator),
+        ("j-chen", Role::Approver),
+        ("m-okafor", Role::Approver),
+        ("aud-bell", Role::Auditor),
+    ] {
+        let secret = fixture_secret(name);
+        registry.register_with_at(store, name, role, &secret, base)?;
+    }
+
     // Phase 1 governance: named owner, one-business-day SLA, retention on record.
     let mut policy = Policy::default();
     policy.set_escalation_owner("M. Okafor, Employee Relations")?;
@@ -233,7 +248,7 @@ pub fn seed(store: &Store, force: bool, record: bool) -> Result<DemoSummary> {
             },
             base + Duration::minutes(index as i64),
         )?;
-        dispositions.record(form)?;
+        dispositions.record(form.signed(&registry, store, "rec-rui")?)?;
         *dispositions_by_kind
             .entry(disposition_kind(index))
             .or_insert(0) += 1;
@@ -373,6 +388,20 @@ pub fn summary(store: &Store) -> Result<DemoSummary> {
     })
 }
 
+/// A deterministic 32-byte secret for the fixture's operators.
+///
+/// The fixture is synthetic and reproducible on purpose; a real operator key comes
+/// from `Registry::register`, which draws from the OS CSPRNG.
+fn fixture_secret(name: &str) -> [u8; 32] {
+    let digest = sha256_hex(format!("ledger-fixture-operator:{name}").as_bytes());
+    let bytes = crate::identity::from_hex(&digest).unwrap_or_default();
+    let mut secret = [0u8; 32];
+    for (slot, byte) in secret.iter_mut().zip(bytes) {
+        *slot = byte;
+    }
+    secret
+}
+
 /// The fixed clock the fixture derives every timestamp from.
 ///
 /// A past instant on purpose: captures must precede sends, and `dispatch` stamps
@@ -510,7 +539,7 @@ fn has_state(store: &Store) -> Result<bool> {
 }
 
 /// The files the seed owns; `--force` removes exactly these.
-const STATE_FILES: [&str; 15] = [
+const STATE_FILES: [&str; 16] = [
     store::GATE_LIBRARY,
     store::TEMPLATES,
     store::PLAYBOOK,
@@ -525,6 +554,7 @@ const STATE_FILES: [&str; 15] = [
     store::REVIEW,
     store::CHECKLIST,
     store::DEMO_SUMMARY,
+    store::OPERATORS,
     "demo-ats.csv",
 ];
 
@@ -532,6 +562,13 @@ const STATE_FILES: [&str; 15] = [
 fn reset(store: &Store) -> Result<()> {
     for name in STATE_FILES {
         remove_if_present(&store.path(name))?;
+    }
+    let keys = store.path("operators");
+    if keys.is_dir() {
+        fs::remove_dir_all(&keys).map_err(|source| Error::Io {
+            path: keys.clone(),
+            source,
+        })?;
     }
     let root = store.root().to_path_buf();
     let entries = fs::read_dir(&root).map_err(|source| Error::Io {

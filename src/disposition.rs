@@ -263,6 +263,44 @@ pub struct NewDisposition {
     pub disposition: Disposition,
     /// `SUPERSEDES`: set only when correcting an existing record.
     pub supersedes: Option<DispositionId>,
+    /// Ed25519 signature over [`NewDisposition::digest`], when an operator key is
+    /// registered. Absent only in bootstrap or demo workspaces with no registry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<crate::identity::Signed>,
+}
+
+impl NewDisposition {
+    /// The canonical digest this record's signature covers.
+    ///
+    /// Deliberately excludes `signature`, and includes the instant at second
+    /// precision so the digest is stable across serialisation.
+    pub fn digest(&self) -> String {
+        let gate = self
+            .disposition
+            .gate()
+            .map(|gate| gate.code().to_owned())
+            .unwrap_or_default();
+        let supersedes = self
+            .supersedes
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        crate::identity::digest_fields([
+            ("application_id", self.application_id.to_string()),
+            ("requisition", self.requisition.to_string()),
+            ("candidate_first_name", self.candidate_first_name.clone()),
+            ("candidate_email", self.candidate_email.to_string()),
+            ("recruiter", self.recruiter.to_string()),
+            ("decision_maker", self.decision_maker.to_string()),
+            (
+                "captured_at",
+                crate::digest::epoch_seconds(self.captured_at).to_string(),
+            ),
+            ("disposition", self.disposition.kind().code().to_owned()),
+            ("gate_code", gate),
+            ("supersedes", supersedes),
+        ])
+    }
 }
 
 /// One raw form submission, before it is checked against its requisition.
@@ -312,7 +350,33 @@ impl NewDisposition {
             captured_at,
             supersedes: form.supersedes,
             disposition: form.disposition,
+            signature: None,
         })
+    }
+}
+
+impl NewDisposition {
+    /// Attaches an operator signature over [`NewDisposition::digest`].
+    ///
+    /// # Errors
+    ///
+    /// Propagates signature-creation errors.
+    pub fn signed(
+        mut self,
+        registry: &crate::identity::Registry,
+        store: &Store,
+        operator: &str,
+    ) -> Result<Self> {
+        let digest = self.digest();
+        self.signature = Some(crate::identity::sign(registry, store, operator, &digest)?);
+        Ok(self)
+    }
+
+    /// Whether the attached signature covers this record and verifies.
+    pub fn signature_valid(&self) -> bool {
+        self.signature
+            .as_ref()
+            .is_some_and(|signature| signature.verify(&self.digest()))
     }
 }
 
@@ -612,6 +676,7 @@ mod tests {
             disposition: Disposition::Admin {
                 reason: AdminReason::RequisitionWithdrawn,
             },
+            signature: None,
             ..form("APP-1", Disposition::Field)
         };
         let corrected = dispositions

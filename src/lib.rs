@@ -34,6 +34,7 @@ pub mod disposition;
 pub mod error;
 pub mod gate;
 pub mod id;
+pub mod identity;
 pub mod jsonl;
 pub mod log;
 pub mod metrics;

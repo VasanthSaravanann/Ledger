@@ -36,8 +36,8 @@ export LEDGER_GENERATED_AT="${LEDGER_GENERATED_AT:-$(sed -n 's/.*"generated_at":
   done
 } > site/cli.txt
 
-./target/release/ledger dispatch --data "$work/pilot" --requisition REQ-2026-014 \
-  --preview --export-html site
+./target/release/ledger --operator qa-patel dispatch --data "$work/pilot" \
+  --requisition REQ-2026-014 --preview --export-html site
 
 # Optional: a real terminal cast for the appendix, when asciinema is installed.
 if command -v asciinema >/dev/null; then

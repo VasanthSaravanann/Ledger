@@ -52,6 +52,10 @@ struct Cli {
     /// to stable #hash handles by default).
     #[arg(long, global = true)]
     debug_ids: bool,
+    /// The operator acting. Defaults to LEDGER_OPERATOR, then the only registered
+    /// operator.
+    #[arg(long, global = true, value_name = "NAME")]
+    operator: Option<String>,
     #[command(subcommand)]
     command: Command,
 }
@@ -116,6 +120,36 @@ enum Command {
     Anchor(AnchorArgs),
     /// Resolve a redacted #hash handle back to its record.
     Find(FindArgs),
+    /// Register and inspect operator identities.
+    #[command(subcommand)]
+    Operator(OperatorCommand),
+    /// Re-check every disposition's operator signature.
+    VerifySignatures(VerifySignaturesArgs),
+}
+
+#[derive(Debug, Subcommand)]
+enum OperatorCommand {
+    /// Create a keypair and register the operator.
+    Register(OperatorRegisterArgs),
+    /// List registered operators and roles.
+    List,
+    /// Print the active operator.
+    Whoami,
+}
+
+#[derive(Debug, Args)]
+struct OperatorRegisterArgs {
+    #[arg(long)]
+    name: String,
+    /// coordinator, approver or auditor.
+    #[arg(long)]
+    role: String,
+}
+
+#[derive(Debug, Args)]
+struct VerifySignaturesArgs {
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -645,10 +679,10 @@ fn main() -> std::process::ExitCode {
 fn execute(cli: Cli) -> Result<()> {
     ledger::redact::set_debug_ids(cli.debug_ids);
     let store = Store::open(&cli.data)?;
-    run(&store, cli.command)
+    run(&store, cli.command, cli.operator.as_deref())
 }
 
-fn run(store: &Store, command: Command) -> Result<()> {
+fn run(store: &Store, command: Command, explicit_operator: Option<&str>) -> Result<()> {
     // Read-only commands never take the lock; everything else does, so two
     // operators cannot interleave writes into the same workspace.
     let read_only = is_read_only(&command);
@@ -656,6 +690,45 @@ fn run(store: &Store, command: Command) -> Result<()> {
     let name = command_name(&command);
     let args = redacted_argv();
     let _lock = if read_only { None } else { Some(store.lock()?) };
+
+    // Identity and authorisation. A workspace with no registry is in bootstrap:
+    // only `init` and the demo fixture may run until someone registers.
+    let registry = ledger::identity::Registry::load(store)?;
+    // Read-only commands never need an identity: `operator list` and
+    // `verify-signatures` must work even when identity resolution is ambiguous.
+    let active_operator = if mutating && !registry.is_empty() {
+        Some(ledger::identity::active(&registry, explicit_operator)?)
+    } else {
+        None
+    };
+    if mutating {
+        match &active_operator {
+            Some(operator) if operator.role.permits(name) => {}
+            Some(operator) => {
+                return Err(Error::Forbidden {
+                    operator: operator.name.clone(),
+                    role: operator.role.to_string(),
+                    command: name.to_owned(),
+                });
+            }
+            None if matches!(name, "init" | "demo seed" | "operator") => {}
+            None => {
+                return Err(Error::invalid(
+                    "operator",
+                    "register an operator first: `ledger operator register --name <name> --role <role>`",
+                ));
+            }
+        }
+    }
+
+    // Snapshot before a command that can change many records at once.
+    if wants_snapshot(&command) && active_operator.is_some() {
+        let stamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        ledger::migrate::snapshot_workspace(
+            store,
+            &store.path("backups").join(format!("{stamp}-{name}")),
+        )?;
+    }
 
     let outcome = match command {
         Command::Init => init(store),
@@ -667,7 +740,7 @@ fn run(store: &Store, command: Command) -> Result<()> {
         Command::Templates(command) => templates(store, command),
         Command::Playbook(command) => playbook(store, command),
         Command::Ats(AtsCommand::Import(args)) => ats_import(store, &args),
-        Command::Disposition(command) => disposition(store, command),
+        Command::Disposition(command) => disposition(store, command, explicit_operator, &registry),
         Command::Qa(command) => qa(store, command),
         Command::Dispatch(args) => dispatch_command(store, &args),
         Command::Log(command) => log(store, command),
@@ -680,6 +753,8 @@ fn run(store: &Store, command: Command) -> Result<()> {
         Command::Migrate(args) => migrate(store, &args),
         Command::Anchor(args) => anchor(store, &args),
         Command::Find(args) => find(store, &args),
+        Command::Operator(command) => operator(store, command, explicit_operator),
+        Command::VerifySignatures(args) => verify_signatures(store, &args),
     };
 
     // Every mutating command that succeeded leaves an operator record. The argv is
@@ -724,6 +799,18 @@ fn command_name(command: &Command) -> &'static str {
         Command::Migrate(_) => "migrate",
         Command::Anchor(_) => "anchor",
         Command::Find(_) => "find",
+        Command::Operator(_) => "operator",
+        Command::VerifySignatures(_) => "verify-signatures",
+    }
+}
+
+/// Whether to snapshot the workspace before running this command.
+fn wants_snapshot(command: &Command) -> bool {
+    match command {
+        Command::Dispatch(args) => !args.preview,
+        Command::Purge(args) => !args.dry_run && args.yes,
+        Command::Migrate(_) => false,
+        _ => false,
     }
 }
 
@@ -1269,9 +1356,14 @@ fn ats_import(store: &Store, args: &AtsImport) -> Result<()> {
     Ok(())
 }
 
-fn disposition(store: &Store, command: DispositionCommand) -> Result<()> {
+fn disposition(
+    store: &Store,
+    command: DispositionCommand,
+    operator: Option<&str>,
+    registry: &ledger::identity::Registry,
+) -> Result<()> {
     match command {
-        DispositionCommand::Record(args) => disposition_record(store, &args),
+        DispositionCommand::Record(args) => disposition_record(store, &args, operator, registry),
         DispositionCommand::List(args) => {
             let id = RequisitionId::try_from(args.requisition.as_str())?;
             let dispositions = Dispositions::open(store)?;
@@ -1332,7 +1424,12 @@ fn disposition(store: &Store, command: DispositionCommand) -> Result<()> {
     }
 }
 
-fn disposition_record(store: &Store, args: &DispositionRecordArgs) -> Result<()> {
+fn disposition_record(
+    store: &Store,
+    args: &DispositionRecordArgs,
+    operator: Option<&str>,
+    registry: &ledger::identity::Registry,
+) -> Result<()> {
     let requisition_id = RequisitionId::try_from(args.requisition.as_str())?;
     let book = load_requisitions(store)?;
     let requisition = book.require(&requisition_id)?;
@@ -1391,6 +1488,13 @@ fn disposition_record(store: &Store, args: &DispositionRecordArgs) -> Result<()>
         Utc::now(),
     )?;
 
+    // A registered workspace signs every disposition; the signature names the key
+    // that authorised the decision and is checked by `verify-signatures`.
+    let form = match (operator, registry.is_empty()) {
+        (Some(operator), false) => form.signed(registry, store, operator)?,
+        _ => form,
+    };
+
     let mut dispositions = Dispositions::open(store)?;
     let stored = dispositions.record(form)?.clone();
     println!(
@@ -1401,6 +1505,90 @@ fn disposition_record(store: &Store, args: &DispositionRecordArgs) -> Result<()>
         stored.form.decision_maker
     );
     println!("record id: {}", stored.id);
+    match &stored.form.signature {
+        Some(signature) => println!(
+            "signed by {} ({})",
+            signature.operator,
+            &signature.public_key[0..12]
+        ),
+        None => println!("UNSIGNED: no operator registry in this workspace"),
+    }
+    Ok(())
+}
+
+fn operator(store: &Store, command: OperatorCommand, explicit: Option<&str>) -> Result<()> {
+    let mut registry = ledger::identity::Registry::load(store)?;
+    match command {
+        OperatorCommand::Register(args) => {
+            let role = args.role.parse::<ledger::identity::Role>()?;
+            let operator = registry.register(store, args.name.as_str(), role)?;
+            println!(
+                "registered {} as {} ({})",
+                operator.name,
+                operator.role,
+                &operator.public_key[0..12]
+            );
+            println!(
+                "private key: {}",
+                ledger::identity::keyfile_path(store, &operator.name).display()
+            );
+            Ok(())
+        }
+        OperatorCommand::List => {
+            if registry.is_empty() {
+                println!("no operators registered");
+                return Ok(());
+            }
+            for operator in registry.operators() {
+                println!(
+                    "{:<16} {:<12} {}",
+                    operator.name,
+                    operator.role,
+                    &operator.public_key[0..12]
+                );
+            }
+            Ok(())
+        }
+        OperatorCommand::Whoami => {
+            let operator = ledger::identity::active(&registry, explicit)?;
+            println!("{} ({})", operator.name, operator.role);
+            Ok(())
+        }
+    }
+}
+
+fn verify_signatures(store: &Store, args: &VerifySignaturesArgs) -> Result<()> {
+    let dispositions = Dispositions::open(store)?;
+    let mut signed = 0usize;
+    let mut unsigned = 0usize;
+    let mut invalid: Vec<String> = Vec::new();
+    for record in dispositions.records() {
+        match &record.form.signature {
+            None => unsigned += 1,
+            Some(_) if record.form.signature_valid() => signed += 1,
+            Some(_) => invalid.push(record.id.to_string()),
+        }
+    }
+    let report = serde_json::json!({
+        "signed": signed,
+        "unsigned": unsigned,
+        "invalid": invalid,
+    });
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("signed records:   {signed}");
+        println!("unsigned records: {unsigned}");
+        if !invalid.is_empty() {
+            println!("INVALID:          {}", invalid.join(", "));
+        }
+    }
+    if !invalid.is_empty() {
+        return Err(Error::invalid(
+            "signature",
+            format!("{} record(s) failed signature verification", invalid.len()),
+        ));
+    }
     Ok(())
 }
 
@@ -2037,6 +2225,8 @@ fn is_read_only(command: &Command) -> bool {
             | Command::Checklist(ChecklistCommand::Show)
             | Command::Governance(GovernanceCommand::Show)
             | Command::Find(_)
+            | Command::Operator(OperatorCommand::List | OperatorCommand::Whoami)
+            | Command::VerifySignatures(_)
     )
 }
 

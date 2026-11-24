@@ -12,7 +12,7 @@ echo "\$ ledger demo seed --data pilot"
 
 echo
 echo "\$ ledger dispatch --preview --requisition $REQ"
-"$LEDGER" dispatch --data "$DATA" --requisition "$REQ" --preview
+"$LEDGER" --operator qa-patel dispatch --data "$DATA" --requisition "$REQ" --preview
 
 echo
 echo "\$ ledger qa record --requisition $REQ --application APP-1150 --qa qa-patel"
@@ -20,12 +20,12 @@ echo "\$ ledger qa record --requisition $REQ --application APP-1150 --qa qa-pate
 
 echo
 echo "\$ ledger dispatch --requisition $REQ   # exit 2: three attempts blocked"
-"$LEDGER" dispatch --data "$DATA" --requisition "$REQ"
+"$LEDGER" --operator qa-patel dispatch --data "$DATA" --requisition "$REQ"
 echo "exit: $?"
 
 echo
 echo "\$ ledger log quarantine --reason 'killed between write and newline'   # only on a torn tail"
-"$LEDGER" dispatch --data "$DATA" --requisition "$REQ" --allow-blocked
+"$LEDGER" --operator qa-patel dispatch --data "$DATA" --requisition "$REQ" --allow-blocked
 
 echo
 echo "\$ ledger log verify"
