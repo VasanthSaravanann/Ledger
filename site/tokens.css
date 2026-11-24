@@ -1,0 +1,43 @@
+/* Ledger design tokens. Shared by `ledger ui` (embedded) and, deliberately, not
+   yet by the artefact site: that CSS is generated inside a format! string, so
+   sharing it changes published bytes and needs a provenance bump. */
+:root {
+  --bg: #fbfbfa;
+  --fg: #17181a;
+  --muted: #5f646b;
+  --line: #e2e4e8;
+  --card: #ffffff;
+  --hover: #f6f7f9;
+  --accent: #1a4fd6;
+  --accent-wash: #eef3ff;
+  --neutral: #3f4650;
+  --neutral-wash: #f1f3f5;
+  --pass: #1c6b3a;
+  --pass-wash: #eaf6ef;
+  --warn: #8a5a00;
+  --warn-wash: #fef6e6;
+  --fail: #a51b1b;
+  --fail-wash: #fdeeee;
+  --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111214;
+    --fg: #e8e8e4;
+    --muted: #9aa0a6;
+    --line: #2b2d31;
+    --card: #17191c;
+    --hover: #1c1f23;
+    --accent: #8fb0ff;
+    --accent-wash: #1a2340;
+    --neutral: #c8ced6;
+    --neutral-wash: #1c1f23;
+    --pass: #7fd6a0;
+    --pass-wash: #13291c;
+    --warn: #e0a44a;
+    --warn-wash: #2a2113;
+    --fail: #ff8a8a;
+    --fail-wash: #2a1414;
+  }
+}

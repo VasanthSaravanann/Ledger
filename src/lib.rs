@@ -26,6 +26,7 @@
 
 pub mod anchor;
 pub mod approval;
+pub mod assets;
 pub mod ats;
 pub mod checklist;
 pub mod demo;

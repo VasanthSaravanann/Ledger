@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
+<meta name="text-scale" content="scale">
 <meta property="og:site_name" content="Ledger">
 <meta property="og:url" content="https://ledger-pilot-chi.vercel.app/gates">
 <meta property="og:image" content="https://ledger-pilot-chi.vercel.app/og.svg">
@@ -13,7 +14,9 @@
 :root{--bg:#fbfbfa;--fg:#17181a;--muted:#5f646b;--line:#dcdcd7;--card:#fff;--accent:#1a4fd6;--code:#f2f2ee;--warn:#8a5a00;--fail:#a51b1b;--pass:#1c6b3a}
 @media (prefers-color-scheme:dark){:root{--bg:#111214;--fg:#e8e8e4;--muted:#9aa0a6;--line:#2b2d31;--card:#17191c;--accent:#8fb0ff;--code:#1c1f23;--warn:#e0a44a;--fail:#ff8a8a;--pass:#7fd6a0}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.skip{position:absolute;left:-9999px;top:0;background:var(--fg);color:var(--bg);padding:.5rem .75rem;border-radius:0 0 6px 0;z-index:10}
+.skip:focus-visible{left:0}
 .wrap{max-width:76ch;margin:0 auto;padding:2.5rem 1.25rem 4rem}
 .banner{display:inline-block;margin:0 0 1.25rem;padding:.3rem .6rem;border:1px solid var(--warn);border-radius:6px;color:var(--warn);font-size:.8125rem;letter-spacing:.02em}
 nav{display:flex;flex-wrap:wrap;gap:.35rem 1rem;margin:0 0 2rem;padding-bottom:.75rem;border-bottom:1px solid var(--line);font-size:.875rem}
@@ -27,7 +30,10 @@ p{margin:0 0 .85rem}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1rem 1.15rem;margin:0 0 1rem}
 .mono,pre,code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:.8125rem}
 pre{margin:0;padding:.9rem 1rem;background:var(--code);border:1px solid var(--line);border-radius:8px;overflow-x:auto;line-height:1.55;white-space:pre-wrap}
-table{width:100%;border-collapse:collapse;font-size:.8125rem;margin:0 0 1rem}
+.table-scroll{overflow-x:auto;max-inline-size:100%;container-type:inline-size;margin:0 0 1rem}
+table{width:100%;border-collapse:collapse;font-size:.8125rem;margin:0 0 1rem;max-inline-size:100%}
+.doc{overflow-x:auto}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 th,td{text-align:left;padding:.45rem .5rem .45rem 0;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--muted);font-weight:600}
 .tag{display:inline-block;padding:.05rem .4rem;border:1px solid var(--line);border-radius:4px;font-size:.75rem;color:var(--muted)}
@@ -38,13 +44,16 @@ th{color:var(--muted);font-weight:600}
 ul{margin:0 0 1rem;padding-left:1.2rem}
 li{margin-bottom:.35rem}
 footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.8125rem}
+@media (forced-colors:active){.banner,.card,pre,nav{border-color:CanvasText}}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
 </style>
 </head>
 <body>
+<a class="skip" href='#content'>Skip to content</a>
 <div class="wrap">
 <p class="banner">Synthetic fixture — no pilot data yet</p>
 <nav><a href="/">Overview</a><a href="/emails">Candidate emails</a><a href="/gates" class="active">Gate library</a><a href="/audit">Hash-chain audit</a><a href="/comparative">Comparative paragraph</a><a href="/demo">Recorded run</a><a href="/ui">Recruiter workspace</a><a href="/lab">Try the rules</a><a href="/format">Format spec</a><a href="/threat-model">Threat model</a></nav>
-<h1>Deterministic gate library</h1><p class="lede">Five Tier 0 blocks, each versioned. <code>GATE-02</code> to <code>GATE-05</code> are programmatically unavailable unless their requisition facts were documented before posting — the capture is refused and the row must be recorded as <code>FIELD</code>.</p><table><thead><tr><th>Block</th><th>Requirement</th><th>Version</th><th>KO column</th><th>Status on this requisition</th></tr></thead><tbody><tr><td><strong>GATE-01</strong><br><span class="meta">Right to work</span></td><td>This role requires lawful work rights in Australia that are not subject to restrictions. This requirement is about the right to work, not citizenship or national origin.</td><td class="mono">v1.0</td><td class="mono">KO_ANSWER_01</td><td><span class="pass">available</span></td></tr>
+<div id="content" tabindex="-1"><h1>Deterministic gate library</h1><p class="lede">Five Tier 0 blocks, each versioned. <code>GATE-02</code> to <code>GATE-05</code> are programmatically unavailable unless their requisition facts were documented before posting — the capture is refused and the row must be recorded as <code>FIELD</code>.</p><table><thead><tr><th>Block</th><th>Requirement</th><th>Version</th><th>KO column</th><th>Status on this requisition</th></tr></thead><tbody><tr><td><strong>GATE-01</strong><br><span class="meta">Right to work</span></td><td>This role requires lawful work rights in Australia that are not subject to restrictions. This requirement is about the right to work, not citizenship or national origin.</td><td class="mono">v1.0</td><td class="mono">KO_ANSWER_01</td><td><span class="pass">available</span></td></tr>
 <tr><td><strong>GATE-02</strong><br><span class="meta">Work-rights duration vs role duration</span></td><td>This role runs until 30 June 2027 and requires work rights covering at least 12 months. The appointment is a fixed-term 12-month contract.</td><td class="mono">v1.1</td><td class="mono">KO_ANSWER_02</td><td><span class="pass">available</span></td></tr>
 <tr><td><strong>GATE-03</strong><br><span class="meta">Mandatory registration or accreditation</span></td><td>This role requires current registration or accreditation with the legislated regulator named in the position description (https://www.ahpra.gov.au).</td><td class="mono">v1.0</td><td class="mono">KO_ANSWER_03</td><td><span class="pass">available</span></td></tr>
 <tr><td><strong>GATE-04</strong><br><span class="meta">Licence</span></td><td>This role requires a licence that is inherent to its duties: the role requires unaccompanied travel between three clinic sites where no public transport operates</td><td class="mono">v1.0</td><td class="mono">KO_ANSWER_04</td><td><span class="pass">available</span></td></tr>
@@ -55,8 +64,8 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:v
 <section class="card"><h3>GATE-03 Mandatory registration or accreditation <span class="tag">v1.0</span></h3><p>This role requires current registration or accreditation with the legislated regulator named in the position description (https://www.ahpra.gov.au).</p><p><strong>What satisfies it:</strong> current registration or accreditation at appointment, with no conditions that limit the duties of the role</p><p><strong>Flexibility:</strong> This requirement is not waivable for this role.</p><h3>Fact dependencies</h3><ul><li><code>REGULATOR_URL</code> — the regulator&#39;s https URL, verified before launch: <span class="mono">https://www.ahpra.gov.au</span></li></ul></section>
 <section class="card"><h3>GATE-04 Licence <span class="tag">v1.0</span></h3><p>This role requires a licence that is inherent to its duties: the role requires unaccompanied travel between three clinic sites where no public transport operates</p><p><strong>What satisfies it:</strong> a current licence of the class stated in the position description</p><p><strong>Flexibility:</strong> This requirement can be waived: the licence may be obtained within the first three months of appointment if the panel agrees.</p><h3>Fact dependencies</h3><ul><li><code>INHERENT_REQUIREMENT_REASON</code> — why the licence is inherent to the role&#39;s concrete duties: <span class="mono">the role requires unaccompanied travel between three clinic sites where no public transport operates</span></li></ul></section>
 <section class="card"><h3>GATE-05 Location and work-location requirements <span class="tag">v1.0</span></h3><p>This role is based at the Townsville clinic and is not a remote position.</p><p><strong>What satisfies it:</strong> residence within 45 minutes of the Townsville clinic, or a confirmed relocation date</p><p><strong>Flexibility:</strong> This requirement can be waived: relocation within 90 days of the start date.</p><h3>Fact dependencies</h3><ul><li><code>LOCATION_REQUIREMENT</code> — the role&#39;s location requirement: <span class="mono">the Townsville clinic</span></li><li><code>LOCATION_SATISFACTION_TEXT</code> — how a candidate satisfies the location requirement: <span class="mono">residence within 45 minutes of the Townsville clinic, or a confirmed relocation date</span></li><li><code>WAIVER_TEXT</code> — the waiver or relocation condition: <span class="mono">relocation within 90 days of the start date</span></li></ul></section>
-
-<footer><p class="mono">build f69e57b · generated 2026-11-24T22:05:42+11:00 · fixture #64f9e1f9e8b4…</p><p>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</p></footer>
+</div>
+<footer><p class="mono">build 43c86bf · generated 2026-11-24T22:18:20+11:00 · fixture #64f9e1f9e8b4…</p><p>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</p></footer>
 </div>
 </body>
 </html>

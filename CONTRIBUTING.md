@@ -78,6 +78,15 @@ and drives a live server. CI fails if committed output differs from a fresh
 generation, so do not edit generated pages by hand. The snapshots must not render
 timestamps, or the drift check would never pass.
 
+Two rules for the published pages:
+
+- **No inline scripts.** `lab.js` and `app.js` are written as files and referenced
+  with `src`, because `vercel.json` enforces `script-src 'self'`. Adding an inline
+  `<script>` will silently break the site under CSP.
+- **No timestamps in the workspace snapshots.** The drift check compares generated
+  bytes; the triage and governance screens render no clock, which is why they can
+  be captured deterministically.
+
 Provenance (build SHA, generation time) is read from the committed
 `site/provenance.json`, not from `HEAD`, so regeneration is byte-identical for a
 fixed checkout. When you change the pages, bump it in the same commit:

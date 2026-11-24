@@ -1,4 +1,4 @@
-<!doctype html><html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>Ledger — Governance</title><style>/* Ledger design tokens. Shared by `ledger ui` (embedded) and, deliberately, not
+<!doctype html><html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="text-scale" content="scale"><title>Ledger — Governance</title><style>/* Ledger design tokens. Shared by `ledger ui` (embedded) and, deliberately, not
    yet by the artefact site: that CSS is generated inside a format! string, so
    sharing it changes published bytes and needs a provenance bump. */
 :root {
@@ -42,11 +42,16 @@
   }
 }
 * { box-sizing: border-box; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 15px/1.55 var(--sans);
+  /* rem, not px: the OS text-scale preference must be able to grow this. */
+  font: 0.9375rem/1.55 var(--sans);
   font-variant-numeric: tabular-nums;
 }
 a { color: var(--accent); text-decoration: none; }
@@ -85,6 +90,25 @@ table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: .855rem; }
 th { color: var(--muted); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; }
 tr:hover td { background: var(--hover); }
+input[type="checkbox"] { inline-size: 1.5rem; block-size: 1.5rem; margin: 0; }
+
+/* Scroll container: a six-column table cannot shrink below legibility, so it
+   scrolls instead of widening the page. Queries are on the container. */
+.table-scroll { overflow-x: auto; max-inline-size: 100%; container-type: inline-size; }
+.table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@container (width < 620px) {
+  .stacked thead { display: none; }
+  .stacked, .stacked tbody, .stacked tr, .stacked th, .stacked td { display: block; }
+  .stacked tr {
+    border: 1px solid var(--line); border-radius: 10px; margin-block-end: 10px; padding: 4px 0;
+  }
+  .stacked td { border: 0; padding: 6px 14px; }
+  .stacked td::before {
+    content: attr(data-label) ": ";
+    color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+  }
+}
 .mono { font-family: var(--mono); font-size: .8rem; }
 .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .74rem; font-weight: 600; }
 .tag-gate { color: var(--fail); background: var(--fail-wash); }
@@ -102,6 +126,10 @@ tr:hover td { background: var(--hover); }
   box-shadow: 0 10px 30px rgb(0 0 0 / .10); transition: transform 220ms cubic-bezier(.16,1,.3,1);
 }
 .bulk[data-open="true"] { transform: translateX(-50%) translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  /* Spatial movement off; the bar still appears, just without the slide. */
+  .bulk { transition: none; }
+}
 button.primary {
   background: var(--accent); color: #fff; border: 1px solid var(--accent);
   border-radius: 8px; padding: 7px 14px; font: inherit; font-weight: 600; cursor: pointer;
@@ -110,34 +138,4 @@ button.ghost { background: transparent; color: var(--fg); border: 1px solid var(
 button:disabled { opacity: .5; cursor: not-allowed; }
 pre { background: var(--hover); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; font: .8rem/1.5 var(--mono); white-space: pre-wrap; }
 .empty { padding: 28px 16px; text-align: center; color: var(--muted); font-size: .875rem; }
-</style></head><body><div style="background:#fef6e6;color:#8a5a00;border-bottom:1px solid #e2e4e8;padding:8px 16px;font:13px/1.5 ui-sans-serif,system-ui,sans-serif">Read-only snapshot of the real workspace, captured at build time from the synthetic fixture. <a href="/ui" style="color:#8a5a00;text-decoration:underline">Run it locally</a> for live data.</div><div class="app"><nav class="side"><p class="brand">Ledger</p><a href="/workspace">Triage</a><a href="/workspace-governance" aria-current="page">Governance</a><a href="/audit">Audit</a><a href="/audit">Import (CLI)</a><p class="role"><b>rec-rui</b><br>coordinator · local only</p></nav><main><h1>Governance</h1><p class="sub">Sign-offs are bound to the copy they approved; editing copy makes them stale rather than silently valid.</p><section class="card"><table><thead><tr><th>Artefact</th><th>Status</th></tr></thead><tbody><tr><td class="mono">gate-library</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">template-gate</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">template-field</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">template-admin</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">playbook</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">requisition-REQ-2026-014</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">comparative-REQ-2026-014</td><td><span class="tag tag-valid">Valid</span></td></tr></tbody></table></section><h2 style="font-size:1rem;margin:22px 0 8px">Operational checklist</h2><p class="sub">0/13 attested — these are unsigned attestations, not keyed sign-offs.</p></main></div><script>// Vanilla, no build step, no CDN. Two jobs: filter the table, and keep the bulk
-// action bar honest about how many rows are selected.
-(() => {
-  const table = document.querySelector("[data-triage-table]");
-  if (table) {
-    const rows = () => Array.from(table.querySelectorAll("tbody tr[data-status]"));
-    const pills = Array.from(document.querySelectorAll("[data-filter]"));
-    const setFilter = (value) => {
-      pills.forEach((pill) => pill.setAttribute("aria-pressed", String(pill.dataset.filter === value)));
-      rows().forEach((row) => {
-        row.hidden = value !== "all" && row.dataset.status !== value;
-      });
-    };
-    pills.forEach((pill) => pill.addEventListener("click", () => setFilter(pill.dataset.filter)));
-    setFilter("all");
-  }
-
-  const boxes = Array.from(document.querySelectorAll("input[data-app]"));
-  const bulk = document.querySelector("[data-bulk]");
-  if (boxes.length && bulk) {
-    const label = bulk.querySelector("[data-bulk-count]");
-    const update = () => {
-      const selected = boxes.filter((box) => box.checked).length;
-      bulk.dataset.open = String(selected >= 2);
-      if (label) label.textContent = `${selected} selected`;
-    };
-    boxes.forEach((box) => box.addEventListener("change", update));
-    update();
-  }
-})();
-</script></body></html>
+</style></head><body><div style="background:#fef6e6;color:#8a5a00;border-bottom:1px solid #e2e4e8;padding:8px 16px;font:13px/1.5 ui-sans-serif,system-ui,sans-serif">Read-only snapshot of the real workspace, captured at build time from the synthetic fixture. <a href="/ui" style="color:#8a5a00;text-decoration:underline">Run it locally</a> for live data.</div><div class="app"><nav class="side"><p class="brand">Ledger</p><a href="/workspace">Triage</a><a href="/workspace-governance" aria-current="page">Governance</a><a href="/audit">Audit</a><p class="role"><b>rec-rui</b><br>coordinator · local only</p></nav><main><h1>Governance</h1><p class="sub">Sign-offs are bound to the copy they approved; editing copy makes them stale rather than silently valid.</p><section class="card"><table><thead><tr><th>Artefact</th><th>Status</th></tr></thead><tbody><tr><td class="mono">gate-library</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">template-gate</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">template-field</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">template-admin</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">playbook</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">requisition-REQ-2026-014</td><td><span class="tag tag-valid">Valid</span></td></tr><tr><td class="mono">comparative-REQ-2026-014</td><td><span class="tag tag-valid">Valid</span></td></tr></tbody></table></section><h2 style="font-size:1rem;margin:22px 0 8px">Operational checklist</h2><p class="sub">0/13 attested — these are unsigned attestations, not keyed sign-offs.</p></main></div><script src="/app.js" defer></script></body></html>

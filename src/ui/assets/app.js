@@ -19,10 +19,15 @@
   const bulk = document.querySelector("[data-bulk]");
   if (boxes.length && bulk) {
     const label = bulk.querySelector("[data-bulk-count]");
+    const status = document.querySelector("[data-bulk-status]");
     const update = () => {
       const selected = boxes.filter((box) => box.checked).length;
       bulk.dataset.open = String(selected >= 2);
       if (label) label.textContent = `${selected} selected`;
+      // One polite region per page, updated only when the count changes.
+      if (status && status.textContent !== `${selected} candidates selected`) {
+        status.textContent = `${selected} candidates selected`;
+      }
     };
     boxes.forEach((box) => box.addEventListener("change", update));
     update();

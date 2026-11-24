@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
+    <meta name="text-scale" content="scale" />
     <title>Ledger — candidate feedback you can defend</title>
     <meta
       name="description"
@@ -59,12 +60,16 @@
         }
       }
       * { box-sizing: border-box; }
-      html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+      html { -webkit-text-size-adjust: 100%; }
+      @media (prefers-reduced-motion: no-preference) {
+        html { scroll-behavior: smooth; }
+      }
       body {
         margin: 0;
         background: var(--bg);
         color: var(--fg);
-        font: 16px/1.6 var(--sans);
+        /* rem, not px: the OS text-scale preference must be able to grow this. */
+        font: 1rem/1.6 var(--sans);
         font-variant-numeric: tabular-nums;
       }
       a { color: var(--accent); text-decoration: none; }
@@ -162,10 +167,16 @@
       footer.site .cols { display: flex; gap: 20px; flex-wrap: wrap; justify-content: space-between; }
       .mono { font-family: var(--mono); font-size: .82rem; }
       .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+      .skip { position: absolute; left: -9999px; top: 0; z-index: 30; background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 0 0 8px 0; text-decoration: none; }
+      .skip:focus-visible { left: 0; }
+      .table-scroll { overflow-x: auto; }
+      @media (forced-colors: active) {
+        header.site, .terminal { border-color: CanvasText; background: Canvas; color: CanvasText; }
+      }
     </style>
   </head>
   <body>
-    <a class="sr" href="#main">Skip to content</a>
+    <a class="skip" href="#main">Skip to content</a>
     <p class="banner">Synthetic fixture — no pilot data on this site. Every number comes from a reproducible demo run.</p>
 
     <header class="site">
@@ -181,7 +192,7 @@
       </div>
     </header>
 
-    <main id="main">
+    <main id="main" tabindex="-1">
       <div class="shell">
         <section class="hero">
           <div>
@@ -350,7 +361,9 @@ ledger --data pilot --operator rec-rui ui --port 8420
             Every page below is generated at build time from a real CLI run. Each carries the commit
             it was generated from and the fixture fingerprint.
           </p>
+          <div class="table-scroll" role="region" aria-labelledby="docs-caption" tabindex="0">
           <table class="docs">
+            <caption id="docs-caption">Published evidence pages, all generated from a real CLI run</caption>
             <thead>
               <tr><th scope="col">Page</th><th scope="col">What you can check</th></tr>
             </thead>
@@ -367,6 +380,7 @@ ledger --data pilot --operator rec-rui ui --port 8420
               <tr><td><a href="/demo">/demo</a></td><td>A scripted terminal run, including the tamper check.</td></tr>
             </tbody>
           </table>
+          </div>
         </div>
       </section>
 

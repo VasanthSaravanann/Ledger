@@ -176,6 +176,13 @@ pub fn export_html(store: &Store, out_dir: impl AsRef<Path>) -> Result<ExportRep
     })?;
     pages.push(demo);
 
+    // The lab's behaviour ships as a file, not an inline script, so the deployed
+    // site can enforce `script-src 'self'` without `'unsafe-inline'`.
+    write_text(out_dir, "lab.js", LAB_JS)?;
+    write_text(out_dir, "app.js", crate::assets::APP_JS)?;
+    write_text(out_dir, "app.css", crate::assets::APP_CSS)?;
+    write_text(out_dir, "tokens.css", crate::assets::TOKENS_CSS)?;
+
     let lab = out_dir.join("lab.html");
     fs::write(&lab, lab_page(store)?).map_err(|source| Error::Io {
         path: lab.clone(),
@@ -452,9 +459,7 @@ pub fn lab_page(store: &Store) -> Result<String> {
     let body = [
         LAB_HTML,
         &data.to_string(),
-        "</script><script>",
-        LAB_JS,
-        "</script>",
+        "</script><script src=\"/lab.js\" defer></script>",
     ]
     .concat();
     Ok(shell("Try the rules", "lab", &body))
@@ -479,8 +484,10 @@ JavaScript below only renders it — and separately re-hashes the chain with you
     <h3>Why a gate can be unavailable</h3>
     <p class="meta">These are the requisition facts the block needs before the requisition may post.
     Missing facts make the gate unavailable, and the form must fall back to <code>FIELD</code>.</p>
-    <table><thead><tr><th>Fact</th><th>Documented value</th></tr></thead>
-    <tbody id="fact-rows"></tbody></table>
+    <div class="table-scroll" role="region" aria-label="Requisition facts" tabindex="0">
+    <table><caption>Facts the selected gate depends on</caption>
+    <thead><tr><th scope="col">Fact</th><th scope="col">Documented value</th></tr></thead>
+    <tbody id="fact-rows"></tbody></table></div>
   </section>
 </div>
 
@@ -505,8 +512,12 @@ Press <em>Tamper</em> and the digest of that entry stops matching its recorded h
     <button class="primary" id="verify">Recompute all three</button>
     <button class="ghost" id="tamper">Tamper with entry 1</button>
   </div>
-  <table><thead><tr><th>Seq</th><th>Send</th><th>Application</th><th>Recorded hash</th>
-  <th>Recomputed in your browser</th></tr></thead><tbody id="chain-rows"></tbody></table>
+  <div class="table-scroll" role="region" aria-label="Send log chain sample" tabindex="0">
+  <table><caption>Three sends, re-hashed in this browser</caption>
+  <thead><tr><th scope="col">Seq</th><th scope="col">Send</th><th scope="col">Application</th>
+  <th scope="col">Recorded hash</th><th scope="col">Recomputed in your browser</th></tr></thead>
+  <tbody id="chain-rows"></tbody></table></div>
+  <p class="sr-only" id="chain-status" aria-live="polite"></p>
 </section>
 <script id="lab-data" type="application/json">"#;
 
@@ -550,7 +561,12 @@ const LAB_JS: &str = r#"<script>
     factRows.textContent = "";
     gate.facts.forEach((fact) => {
       const row = document.createElement("tr");
-      row.innerHTML = `<td class="mono">${fact.key}</td><td>${fact.value || "MISSING"}</td>`;
+      const key = document.createElement("td");
+      key.className = "mono";
+      key.textContent = fact.key;
+      const value = document.createElement("td");
+      value.textContent = fact.value || "MISSING";
+      row.append(key, value);
       factRows.append(row);
     });
   };
@@ -590,20 +606,30 @@ const LAB_JS: &str = r#"<script>
     toHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
 
   const rows = document.getElementById("chain-rows");
-  const entries = data.chain.map((entry) => ({ ...entry, current: entry.payload }));
+  const status = document.getElementById("chain-status");
+  const entries = data.chain.map((entry) => ({ ...entry, current: entry.payload, expectMatch: true }));
   const renderChain = async () => {
     rows.textContent = "";
     for (const entry of entries) {
       const computed = await digest(entry.current);
       const matches = computed === entry.entry_hash;
       const row = document.createElement("tr");
-      row.innerHTML =
-        `<td class="mono">${entry.seq}</td><td class="mono">${entry.send_id}</td>` +
-        `<td class="mono">${entry.application_id}</td>` +
-        `<td class="mono">${entry.entry_hash.slice(0, 16)}…</td>` +
-        `<td class="mono ${matches ? "ok" : "bad"}">${matches ? "match" : "MISMATCH"}</td>`;
+      const add = (text, className) => {
+        const cell = document.createElement("td");
+        cell.className = className;
+        cell.textContent = text;
+        row.append(cell);
+      };
+      add(String(entry.seq), "mono");
+      add(entry.send_id, "mono");
+      add(entry.application_id, "mono");
+      add(`${entry.entry_hash.slice(0, 16)}…`, "mono");
+      add(matches ? "match" : "MISMATCH", `mono ${matches ? "ok" : "bad"}`);
       rows.append(row);
     }
+    status.textContent = entries.every((entry) => entry.expectMatch)
+      ? "All three digests match their recorded hashes."
+      : "A digest does not match: the log would be refused.";
   };
   document.getElementById("verify").addEventListener("click", renderChain);
   document.getElementById("tamper").addEventListener("click", () => {
@@ -615,6 +641,7 @@ const LAB_JS: &str = r#"<script>
       if (entries[0].current === original) {
         entries[0].current = original.slice(0, 20) + "x" + original.slice(21);
       }
+      entries[0].expectMatch = false;
     }
     renderChain();
   });
@@ -739,6 +766,7 @@ fn shell_with(title: &str, current: &str, body: &str, provenance: Option<&Proven
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
+<meta name="text-scale" content="scale">
 <meta property="og:site_name" content="Ledger">
 <meta property="og:url" content="{ORIGIN}/{current}">
 <meta property="og:image" content="{ORIGIN}/og.svg">
@@ -748,7 +776,9 @@ fn shell_with(title: &str, current: &str, body: &str, provenance: Option<&Proven
 :root{{--bg:#fbfbfa;--fg:#17181a;--muted:#5f646b;--line:#dcdcd7;--card:#fff;--accent:#1a4fd6;--code:#f2f2ee;--warn:#8a5a00;--fail:#a51b1b;--pass:#1c6b3a}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#111214;--fg:#e8e8e4;--muted:#9aa0a6;--line:#2b2d31;--card:#17191c;--accent:#8fb0ff;--code:#1c1f23;--warn:#e0a44a;--fail:#ff8a8a;--pass:#7fd6a0}}}}
 *{{box-sizing:border-box}}
-body{{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}}
+body{{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}}
+.skip{{position:absolute;left:-9999px;top:0;background:var(--fg);color:var(--bg);padding:.5rem .75rem;border-radius:0 0 6px 0;z-index:10}}
+.skip:focus-visible{{left:0}}
 .wrap{{max-width:76ch;margin:0 auto;padding:2.5rem 1.25rem 4rem}}
 .banner{{display:inline-block;margin:0 0 1.25rem;padding:.3rem .6rem;border:1px solid var(--warn);border-radius:6px;color:var(--warn);font-size:.8125rem;letter-spacing:.02em}}
 nav{{display:flex;flex-wrap:wrap;gap:.35rem 1rem;margin:0 0 2rem;padding-bottom:.75rem;border-bottom:1px solid var(--line);font-size:.875rem}}
@@ -762,7 +792,10 @@ p{{margin:0 0 .85rem}}
 .card{{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1rem 1.15rem;margin:0 0 1rem}}
 .mono,pre,code{{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:.8125rem}}
 pre{{margin:0;padding:.9rem 1rem;background:var(--code);border:1px solid var(--line);border-radius:8px;overflow-x:auto;line-height:1.55;white-space:pre-wrap}}
-table{{width:100%;border-collapse:collapse;font-size:.8125rem;margin:0 0 1rem}}
+.table-scroll{{overflow-x:auto;max-inline-size:100%;container-type:inline-size;margin:0 0 1rem}}
+table{{width:100%;border-collapse:collapse;font-size:.8125rem;margin:0 0 1rem;max-inline-size:100%}}
+.doc{{overflow-x:auto}}
+.sr-only{{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 th,td{{text-align:left;padding:.45rem .5rem .45rem 0;border-bottom:1px solid var(--line);vertical-align:top}}
 th{{color:var(--muted);font-weight:600}}
 .tag{{display:inline-block;padding:.05rem .4rem;border:1px solid var(--line);border-radius:4px;font-size:.75rem;color:var(--muted)}}
@@ -773,13 +806,16 @@ th{{color:var(--muted);font-weight:600}}
 ul{{margin:0 0 1rem;padding-left:1.2rem}}
 li{{margin-bottom:.35rem}}
 footer{{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.8125rem}}
+@media (forced-colors:active){{.banner,.card,pre,nav{{border-color:CanvasText}}}}
+@media (prefers-reduced-motion:no-preference){{html{{scroll-behavior:smooth}}}}
 </style>
 </head>
 <body>
+<a class="skip" href='#content'>Skip to content</a>
 <div class="wrap">
 <p class="banner">{SYNTHETIC_BANNER}</p>
 <nav><a href="/">Overview</a>{nav}</nav>
-{body}
+<div id="content" tabindex="-1">{body}</div>
 <footer>{provenance}<p>Generated at build time from <code>ledger</code> CLI output. {SYNTHETIC_BANNER}.</p></footer>
 </div>
 </body>

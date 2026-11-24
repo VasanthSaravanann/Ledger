@@ -1,0 +1,97 @@
+* { box-sizing: border-box; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  /* rem, not px: the OS text-scale preference must be able to grow this. */
+  font: 0.9375rem/1.55 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+a { color: var(--accent); text-decoration: none; }
+.app { display: grid; grid-template-columns: 208px 1fr; min-height: 100vh; }
+.side {
+  border-right: 1px solid var(--line);
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.brand { font-weight: 650; letter-spacing: -.01em; margin: 0 0 14px; }
+.side a {
+  padding: 7px 10px; border-radius: 7px; color: var(--muted); font-size: .875rem;
+}
+.side a[aria-current="page"] { background: var(--accent-wash); color: var(--accent); font-weight: 600; }
+.side a:hover { background: var(--hover); }
+.role { margin-top: auto; font-size: .78rem; color: var(--muted); }
+.role b { color: var(--fg); font-weight: 600; }
+main { padding: 26px 30px 90px; max-width: 1080px; }
+h1 { font-size: 1.375rem; letter-spacing: -.015em; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0 0 22px; font-size: .9rem; }
+.kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin-bottom: 22px; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.kpi h2 { margin: 0 0 6px; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.kpi .n { font-size: 1.5rem; font-weight: 650; letter-spacing: -.02em; }
+.kpi .d { font-size: .8rem; color: var(--muted); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.pill {
+  border: 1px solid var(--line); background: transparent; color: var(--muted);
+  padding: 4px 10px; border-radius: 999px; font: inherit; font-size: .8rem; cursor: pointer;
+}
+.pill[aria-pressed="true"] { background: var(--accent-wash); border-color: var(--accent); color: var(--accent); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: .855rem; }
+th { color: var(--muted); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; }
+tr:hover td { background: var(--hover); }
+input[type="checkbox"] { inline-size: 1.5rem; block-size: 1.5rem; margin: 0; }
+
+/* Scroll container: a six-column table cannot shrink below legibility, so it
+   scrolls instead of widening the page. Queries are on the container. */
+.table-scroll { overflow-x: auto; max-inline-size: 100%; container-type: inline-size; }
+.table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@container (width < 620px) {
+  .stacked thead { display: none; }
+  .stacked, .stacked tbody, .stacked tr, .stacked th, .stacked td { display: block; }
+  .stacked tr {
+    border: 1px solid var(--line); border-radius: 10px; margin-block-end: 10px; padding: 4px 0;
+  }
+  .stacked td { border: 0; padding: 6px 14px; }
+  .stacked td::before {
+    content: attr(data-label) ": ";
+    color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+  }
+}
+.mono { font-family: var(--mono); font-size: .8rem; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .74rem; font-weight: 600; }
+.tag-gate { color: var(--fail); background: var(--fail-wash); }
+.tag-field { color: var(--neutral); background: var(--neutral-wash); }
+.tag-admin { color: var(--neutral); background: var(--neutral-wash); }
+.tag-pending { color: var(--warn); background: var(--warn-wash); }
+.tag-valid { color: var(--pass); background: var(--pass-wash); }
+.tag-stale { color: var(--warn); background: var(--warn-wash); }
+.tag-unsigned { color: var(--neutral); background: var(--neutral-wash); }
+.tag-invalid { color: var(--fail); background: var(--fail-wash); }
+.bulk {
+  position: fixed; left: 50%; transform: translateX(-50%) translateY(140%);
+  bottom: 18px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 14px; display: flex; gap: 12px; align-items: center;
+  box-shadow: 0 10px 30px rgb(0 0 0 / .10); transition: transform 220ms cubic-bezier(.16,1,.3,1);
+}
+.bulk[data-open="true"] { transform: translateX(-50%) translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  /* Spatial movement off; the bar still appears, just without the slide. */
+  .bulk { transition: none; }
+}
+button.primary {
+  background: var(--accent); color: #fff; border: 1px solid var(--accent);
+  border-radius: 8px; padding: 7px 14px; font: inherit; font-weight: 600; cursor: pointer;
+}
+button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; font: inherit; cursor: pointer; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+pre { background: var(--hover); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; font: .8rem/1.5 var(--mono); white-space: pre-wrap; }
+.empty { padding: 28px 16px; text-align: center; color: var(--muted); font-size: .875rem; }

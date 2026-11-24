@@ -56,11 +56,13 @@ if [ -n "$TOKEN" ]; then
   curl -s -c "$work/cookies" -o /dev/null "http://127.0.0.1:$PORT/?token=$TOKEN"
   snapshot() {
     # The app's own HTML, with its internal links pointed at the sibling snapshot
-    # and a banner that says this is a read-only capture.
+    # and a banner that says this is a read-only capture. The app's inline script
+    # becomes a file reference so the deployed CSP can keep script-src 'self'.
     curl -s -b "$work/cookies" "http://127.0.0.1:$PORT$1" \
       | sed -e 's|href="/"|href="/workspace"|g' \
             -e 's|href="/governance"|href="/workspace-governance"|g' \
             -e 's|<body>|<body><div style="background:#fef6e6;color:#8a5a00;border-bottom:1px solid #e2e4e8;padding:8px 16px;font:13px/1.5 ui-sans-serif,system-ui,sans-serif">Read-only snapshot of the real workspace, captured at build time from the synthetic fixture. <a href="/ui" style="color:#8a5a00;text-decoration:underline">Run it locally</a> for live data.</div>|' \
+      | perl -0pe 's{<script>.*?</script>}{<script src="/app.js" defer></script>}s' \
       > "$2"
   }
   snapshot "/" site/workspace.html

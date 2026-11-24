@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
+<meta name="text-scale" content="scale">
 <meta property="og:site_name" content="Ledger">
 <meta property="og:url" content="https://ledger-pilot-chi.vercel.app/ui">
 <meta property="og:image" content="https://ledger-pilot-chi.vercel.app/og.svg">
@@ -13,7 +14,9 @@
 :root{--bg:#fbfbfa;--fg:#17181a;--muted:#5f646b;--line:#dcdcd7;--card:#fff;--accent:#1a4fd6;--code:#f2f2ee;--warn:#8a5a00;--fail:#a51b1b;--pass:#1c6b3a}
 @media (prefers-color-scheme:dark){:root{--bg:#111214;--fg:#e8e8e4;--muted:#9aa0a6;--line:#2b2d31;--card:#17191c;--accent:#8fb0ff;--code:#1c1f23;--warn:#e0a44a;--fail:#ff8a8a;--pass:#7fd6a0}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.skip{position:absolute;left:-9999px;top:0;background:var(--fg);color:var(--bg);padding:.5rem .75rem;border-radius:0 0 6px 0;z-index:10}
+.skip:focus-visible{left:0}
 .wrap{max-width:76ch;margin:0 auto;padding:2.5rem 1.25rem 4rem}
 .banner{display:inline-block;margin:0 0 1.25rem;padding:.3rem .6rem;border:1px solid var(--warn);border-radius:6px;color:var(--warn);font-size:.8125rem;letter-spacing:.02em}
 nav{display:flex;flex-wrap:wrap;gap:.35rem 1rem;margin:0 0 2rem;padding-bottom:.75rem;border-bottom:1px solid var(--line);font-size:.875rem}
@@ -27,7 +30,10 @@ p{margin:0 0 .85rem}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1rem 1.15rem;margin:0 0 1rem}
 .mono,pre,code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:.8125rem}
 pre{margin:0;padding:.9rem 1rem;background:var(--code);border:1px solid var(--line);border-radius:8px;overflow-x:auto;line-height:1.55;white-space:pre-wrap}
-table{width:100%;border-collapse:collapse;font-size:.8125rem;margin:0 0 1rem}
+.table-scroll{overflow-x:auto;max-inline-size:100%;container-type:inline-size;margin:0 0 1rem}
+table{width:100%;border-collapse:collapse;font-size:.8125rem;margin:0 0 1rem;max-inline-size:100%}
+.doc{overflow-x:auto}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 th,td{text-align:left;padding:.45rem .5rem .45rem 0;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--muted);font-weight:600}
 .tag{display:inline-block;padding:.05rem .4rem;border:1px solid var(--line);border-radius:4px;font-size:.75rem;color:var(--muted)}
@@ -38,16 +44,19 @@ th{color:var(--muted);font-weight:600}
 ul{margin:0 0 1rem;padding-left:1.2rem}
 li{margin-bottom:.35rem}
 footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.8125rem}
+@media (forced-colors:active){.banner,.card,pre,nav{border-color:CanvasText}}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
 </style>
 </head>
 <body>
+<a class="skip" href='#content'>Skip to content</a>
 <div class="wrap">
 <p class="banner">Synthetic fixture — no pilot data yet</p>
 <nav><a href="/">Overview</a><a href="/emails">Candidate emails</a><a href="/gates">Gate library</a><a href="/audit">Hash-chain audit</a><a href="/comparative">Comparative paragraph</a><a href="/demo">Recorded run</a><a href="/ui" class="active">Recruiter workspace</a><a href="/lab">Try the rules</a><a href="/format">Format spec</a><a href="/threat-model">Threat model</a></nav>
-<h1>Recruiter workspace</h1><p class="lede">A local, loopback-only web workspace over the same core: <code>ledger ui --operator &lt;name&gt; --port 8420</code> serves <code>127.0.0.1</code> and nothing else. It is behind the optional <code>ui</code> feature, so the default build stays the offline CLI.</p><pre>cargo build --release --features ui
+<div id="content" tabindex="-1"><h1>Recruiter workspace</h1><p class="lede">A local, loopback-only web workspace over the same core: <code>ledger ui --operator &lt;name&gt; --port 8420</code> serves <code>127.0.0.1</code> and nothing else. It is behind the optional <code>ui</code> feature, so the default build stays the offline CLI.</p><pre>cargo build --release --features ui
 ledger --data pilot --operator rec-rui ui --port 8420
-# http://127.0.0.1:8420/?token=&lt;32-byte hex&gt;</pre><h2>Routes</h2><table><caption>Role is enforced per request, not at launch.</caption><thead><tr><th>Route</th><th>Method</th><th>Role</th><th>Purpose</th></tr></thead><tbody><tr><td class="mono">/</td><td>GET</td><td>any signed-in</td><td>Triage table and four KPI cards</td></tr><tr><td class="mono">/api/preview</td><td>POST</td><td>any signed-in</td><td>Render the email for a disposition</td></tr><tr><td class="mono">/api/dispose</td><td>POST</td><td>coordinator</td><td>Capture one disposition</td></tr><tr><td class="mono">/api/dispose/batch</td><td>POST</td><td>coordinator</td><td>Atomic batch, including corrections</td></tr><tr><td class="mono">/governance</td><td>GET</td><td>any signed-in</td><td>Seven artefact verdicts and the checklist</td></tr><tr><td class="mono">/audit</td><td>GET</td><td>any signed-in</td><td>Chain check and operator activity</td></tr></tbody></table><h2>How it stays safe</h2><ul><li><strong>One operator per process.</strong> The session is bound at launch from <code>--operator</code>; identity is a name plus a <code>0600</code> keyfile, not an account, so switching operators is a relaunch.</li><li><strong>Token, then cookie.</strong> The first <code>GET /?token=</code> consumes a one-time token and sets <code>HttpOnly; SameSite=Strict</code> <code>ledger_session</code>, then redirects. Everything else needs the cookie (<code>401</code>).</li><li><strong>RBAC per request.</strong> Mutations consult <code>Role::permits</code>; an auditor gets <code>403</code> on <code>/api/dispose*</code> and <code>200</code> on <code>/audit</code>.</li><li><strong>The workspace lock is the boundary.</strong> Writes take <code>Store::lock</code> (<code>flock</code>) inside <code>spawn_blocking</code>; contention is <code>409</code> with the holder. Reads never block on a CLI run.</li><li><strong>No assets on the wire.</strong> CSS and JS are embedded with <code>include_str!</code>, system fonts only, no CDN, no build step — it works air-gapped.</li><li><strong>Bulk capture is one write.</strong> A batch is validated against the log plus the batch already staged, then lands in a single <code>append_batch</code>; a rejected batch writes zero bytes.</li></ul><h2>Not wired into the UI yet</h2><ul><li>The ATS import column mapper (needs a mapping-profile model in core first).</li><li>The <code>.eml</code> draft and zip download routes.</li><li>One-click re-approval, the snapshot button, and delivery confirmation.</li></ul><p class="lede">Everything above is an honest list: the workspace covers triage, capture and audit; the remaining screens reuse handlers that already exist in the CLI.</p><p class="lede">See it without running it: <a href="/workspace">triage snapshot</a> and <a href="/workspace-governance">governance snapshot</a>, captured from a live server run against the fixture at build time.</p>
-<footer><p class="mono">build f69e57b · generated 2026-11-24T22:05:42+11:00 · fixture #64f9e1f9e8b4…</p><p>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</p></footer>
+# http://127.0.0.1:8420/?token=&lt;32-byte hex&gt;</pre><h2>Routes</h2><table><caption>Role is enforced per request, not at launch.</caption><thead><tr><th>Route</th><th>Method</th><th>Role</th><th>Purpose</th></tr></thead><tbody><tr><td class="mono">/</td><td>GET</td><td>any signed-in</td><td>Triage table and four KPI cards</td></tr><tr><td class="mono">/api/preview</td><td>POST</td><td>any signed-in</td><td>Render the email for a disposition</td></tr><tr><td class="mono">/api/dispose</td><td>POST</td><td>coordinator</td><td>Capture one disposition</td></tr><tr><td class="mono">/api/dispose/batch</td><td>POST</td><td>coordinator</td><td>Atomic batch, including corrections</td></tr><tr><td class="mono">/governance</td><td>GET</td><td>any signed-in</td><td>Seven artefact verdicts and the checklist</td></tr><tr><td class="mono">/audit</td><td>GET</td><td>any signed-in</td><td>Chain check and operator activity</td></tr></tbody></table><h2>How it stays safe</h2><ul><li><strong>One operator per process.</strong> The session is bound at launch from <code>--operator</code>; identity is a name plus a <code>0600</code> keyfile, not an account, so switching operators is a relaunch.</li><li><strong>Token, then cookie.</strong> The first <code>GET /?token=</code> consumes a one-time token and sets <code>HttpOnly; SameSite=Strict</code> <code>ledger_session</code>, then redirects. Everything else needs the cookie (<code>401</code>).</li><li><strong>RBAC per request.</strong> Mutations consult <code>Role::permits</code>; an auditor gets <code>403</code> on <code>/api/dispose*</code> and <code>200</code> on <code>/audit</code>.</li><li><strong>The workspace lock is the boundary.</strong> Writes take <code>Store::lock</code> (<code>flock</code>) inside <code>spawn_blocking</code>; contention is <code>409</code> with the holder. Reads never block on a CLI run.</li><li><strong>No assets on the wire.</strong> CSS and JS are embedded with <code>include_str!</code>, system fonts only, no CDN, no build step — it works air-gapped.</li><li><strong>Bulk capture is one write.</strong> A batch is validated against the log plus the batch already staged, then lands in a single <code>append_batch</code>; a rejected batch writes zero bytes.</li></ul><h2>Not wired into the UI yet</h2><ul><li>The ATS import column mapper (needs a mapping-profile model in core first).</li><li>The <code>.eml</code> draft and zip download routes.</li><li>One-click re-approval, the snapshot button, and delivery confirmation.</li></ul><p class="lede">Everything above is an honest list: the workspace covers triage, capture and audit; the remaining screens reuse handlers that already exist in the CLI.</p><p class="lede">See it without running it: <a href="/workspace">triage snapshot</a> and <a href="/workspace-governance">governance snapshot</a>, captured from a live server run against the fixture at build time.</p></div>
+<footer><p class="mono">build 43c86bf · generated 2026-11-24T22:18:20+11:00 · fixture #64f9e1f9e8b4…</p><p>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</p></footer>
 </div>
 </body>
 </html>

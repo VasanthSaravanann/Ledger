@@ -37,9 +37,7 @@ use crate::requisition::{Requisition, RequisitionBook};
 use crate::store::Store;
 use crate::template::{MergeContext, Templates, render};
 
-const TOKENS_CSS: &str = include_str!("assets/tokens.css");
-const APP_CSS: &str = include_str!("assets/app.css");
-const APP_JS: &str = include_str!("assets/app.js");
+use crate::assets::{APP_CSS, APP_JS, TOKENS_CSS};
 
 /// How the server was launched.
 #[derive(Debug, Clone)]
@@ -264,15 +262,15 @@ fn layout(state: &AppState, title: &str, current: &str, body: &str) -> String {
     format!(
         "<!doctype html><html lang=\"en-AU\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
-         <meta name=\"color-scheme\" content=\"light dark\"><title>Ledger — {title}</title>\
+         <meta name=\"color-scheme\" content=\"light dark\"><meta name=\"text-scale\" content=\"scale\">\
+         <title>Ledger — {title}</title>\
          <style>{TOKENS_CSS}{APP_CSS}</style></head><body><div class=\"app\">\
-         <nav class=\"side\"><p class=\"brand\">Ledger</p>{}{}{}{}\
+         <nav class=\"side\"><p class=\"brand\">Ledger</p>{}{}{}\
          <p class=\"role\"><b>{}</b><br>{} · local only</p></nav>\
          <main>{body}</main></div><script>{APP_JS}</script></body></html>",
         link("/", "Triage"),
         link("/governance", "Governance"),
         link("/audit", "Audit"),
-        link("/audit", "Import (CLI)"),
         escape(&state.operator.name),
         state.operator.role,
     )
@@ -376,9 +374,13 @@ async fn index(
         *counts.entry(queue.clone()).or_insert(0) += 1;
         rows.push_str(&format!(
             "<tr data-status=\"{queue}\" data-app=\"{app}\">\
-             <td><input type=\"checkbox\" data-app=\"{app}\" aria-label=\"select {app}\"></td>\
-             <td class=\"mono\">{app}</td><td>{name}</td><td class=\"mono\">{email}</td>\
-             <td>{tag}</td><td class=\"mono\">{dm}</td></tr>",
+             <td data-label=\"Select\"><input type=\"checkbox\" data-app=\"{app}\" \
+             aria-label=\"select {app}\"></td>\
+             <td class=\"mono\" data-label=\"Application\">{app}</td>\
+             <td data-label=\"Name\">{name}</td>\
+             <td class=\"mono\" data-label=\"Email\">{email}</td>\
+             <td data-label=\"State\">{tag}</td>\
+             <td class=\"mono\" data-label=\"Decision maker\">{dm}</td></tr>",
             app = escape(applicant.application_id.as_str()),
             name = escape(&applicant.first_name),
             email = escape(applicant.email.as_str()),
@@ -416,12 +418,20 @@ async fn index(
          <button class=\"pill\" data-filter=\"gate\" aria-pressed=\"false\">GATE</button>\
          <button class=\"pill\" data-filter=\"field\" aria-pressed=\"false\">FIELD</button>\
          <button class=\"pill\" data-filter=\"admin\" aria-pressed=\"false\">ADMIN</button>\
-         </div><table data-triage-table><thead><tr><th></th><th>Application</th><th>Name</th>\
-         <th>Email</th><th>State</th><th>Decision maker</th></tr></thead><tbody>{rows}</tbody></table></section>\
+         </div>\
+         <div class=\"table-scroll\" role=\"region\" aria-labelledby=\"triage-caption\" tabindex=\"0\">\
+         <table data-triage-table class=\"stacked\">\
+         <caption id=\"triage-caption\">Applicants in the initial-screen roster</caption>\
+         <thead><tr><th scope=\"col\"><span class=\"sr-only\">Select</span></th>\
+         <th scope=\"col\">Application</th><th scope=\"col\">Name</th>\
+         <th scope=\"col\">Email</th><th scope=\"col\">State</th>\
+         <th scope=\"col\">Decision maker</th></tr></thead><tbody>{rows}</tbody></table></div></section>\
+         <p class=\"sr-only\" data-bulk-status aria-live=\"polite\"></p>\
          <div class=\"bulk\" data-bulk data-open=\"false\">\
          <span data-bulk-count>0 selected</span>\
-         <button class=\"ghost\" disabled>Export preview</button>\
-         <button class=\"primary\" disabled>Bulk dispose</button></div>",
+         <button class=\"ghost\" disabled aria-describedby=\"bulk-note\">Export preview</button>\
+         <button class=\"primary\" disabled aria-describedby=\"bulk-note\">Bulk dispose</button>\
+         <span id=\"bulk-note\" class=\"meta\">Bulk actions arrive with the draft-export screen.</span></div>",
         req = escape(state.requisition.id.as_str()),
         title = escape(&state.requisition.title),
         sent = roster.applicants.len(),
