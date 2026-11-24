@@ -1,0 +1,5 @@
+APPLICATION_ID,FIRST_NAME,EMAIL,REQ_ID,ROLE_TITLE,STAGE_AT_REJECTION,KO_ANSWER_01,KO_ANSWER_02,KO_ANSWER_03,KO_ANSWER_04,KO_ANSWER_05,APPLIED_DATE
+APP-1001,Ada,ada@example.com,REQ-2026-014,Registered Nurse,Initial screen,not-held,,,,,2026-11-01
+APP-1002,Ben,ben@example.com,REQ-2026-014,Registered Nurse,Initial screen,,shorter-than-role,,,,2026-11-01
+APP-1003,Cleo,cleo@example.com,REQ-2026-014,Registered Nurse,Initial screen,,,,,,2026-11-01
+APP-1004,Dev,dev@example.com,REQ-2026-014,Registered Nurse,Interview,,,,,,2026-11-01

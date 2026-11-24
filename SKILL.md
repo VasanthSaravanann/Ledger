@@ -20,9 +20,10 @@ the product is, what the seven specification documents demanded, what was actual
 built and decided across the whole build conversation, the invariants that must not
 break, and how to run and test it.
 
-The specifications themselves remain authoritative in the repo — `plan.md`, `V2.md`,
-`V3.md`, `V4.md`, `V5.md`, `Web.md`, `website.md`. This file compresses them, adds
-the decisions that were made while executing them, and records what is still open.
+The specification documents are no longer in the tree; they remain readable at
+`git show 90dfcb6:V2.md` (likewise `plan.md`, `V3.md`, `V4.md`, `V5.md`, `Web.md`,
+`website.md`). This file compresses them, keeps the decisions that were made while
+executing them, and records what is still open.
 
 ---
 
