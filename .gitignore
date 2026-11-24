@@ -1,0 +1,4 @@
+/target
+/ledger-data
+*.tmp
+.DS_Store
