@@ -1,0 +1,52 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --locked --bin ledger
+      - name: Package and checksum
+        run: |
+          mkdir -p dist
+          cp target/release/ledger "dist/ledger-${{ matrix.target }}"
+          # The verifier ships alongside the binary: it is the point of the format.
+          cp verify_log.py LICENSE FORMAT_SPEC.md THREAT_MODEL.md dist/
+          cd dist
+          shasum -a 256 "ledger-${{ matrix.target }}" > "ledger-${{ matrix.target }}.sha256"
+          tar czf "ledger-${{ matrix.target }}.tar.gz" "ledger-${{ matrix.target }}" verify_log.py LICENSE FORMAT_SPEC.md THREAT_MODEL.md
+          shasum -a 256 "ledger-${{ matrix.target }}.tar.gz" >> "ledger-${{ matrix.target }}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ledger-${{ matrix.target }}
+          path: dist/*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

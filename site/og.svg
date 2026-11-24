@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#111214"/>
+  <text x="80" y="240" fill="#e8e8e4" font-family="ui-sans-serif,system-ui,sans-serif" font-size="64" font-weight="600">Manually sent,</text>
+  <text x="80" y="320" fill="#e8e8e4" font-family="ui-sans-serif,system-ui,sans-serif" font-size="64" font-weight="600">machine-enforced.</text>
+  <text x="80" y="420" fill="#9aa0a6" font-family="ui-monospace,Menlo,monospace" font-size="28">Ledger · audit-grade candidate feedback pilot</text>
+  <text x="80" y="520" fill="#8fb0ff" font-family="ui-monospace,Menlo,monospace" font-size="24">Synthetic fixture — no pilot data yet</text>
+</svg>

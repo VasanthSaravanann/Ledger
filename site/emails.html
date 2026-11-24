@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
+<meta property="og:site_name" content="Ledger">
+<meta property="og:url" content="https://ledger-pilot-chi.vercel.app/emails">
+<meta property="og:image" content="https://ledger-pilot-chi.vercel.app/og.svg">
+<meta name="twitter:card" content="summary_large_image">
 <title>Ledger — Candidate emails</title>
 <style>
 :root{--bg:#fbfbfa;--fg:#17181a;--muted:#5f646b;--line:#dcdcd7;--card:#fff;--accent:#1a4fd6;--code:#f2f2ee;--warn:#8a5a00;--fail:#a51b1b;--pass:#1c6b3a}
@@ -39,7 +43,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:v
 <body>
 <div class="wrap">
 <p class="banner">Synthetic fixture — no pilot data yet</p>
-<nav><a href="/">Overview</a><a href="/emails" class="active">Candidate emails</a><a href="/gates">Gate library</a><a href="/audit">Hash-chain audit</a><a href="/comparative">Comparative paragraph</a><a href="/demo">Recorded run</a></nav>
+<nav><a href="/">Overview</a><a href="/emails" class="active">Candidate emails</a><a href="/gates">Gate library</a><a href="/audit">Hash-chain audit</a><a href="/comparative">Comparative paragraph</a><a href="/demo">Recorded run</a><a href="/format">Format spec</a><a href="/threat-model">Threat model</a></nav>
 <h1>What the candidate receives</h1><p class="lede">Templates A, B, and C rendered by the same code that dispatches the pilot, using fixture dispositions from REQ-2026-014. Named sender, monitored reply-to, and no per-candidate judgement.</p><section class="card"><h3>Template A — GATE <span class="tag">v1.0</span></h3><p class="meta">Names the stated requirement, the candidate&#39;s own answer, what would satisfy it, and the monitored reply path for a correction.</p><p class="meta">Subject: Update on your application for Registered Nurse</p><pre>Dear Ada,
 
 Thank you for applying for Registered Nurse at Example Health.
@@ -101,7 +105,7 @@ R. Patel
 Recruitment Coordinator, Example Health</pre></section>
 <h2>Why the wording is safe</h2><ul><li>Template B must contain the fixed feedback-decline paragraph; the build fails if it is removed.</li><li>Every email carries three one-click value signals — no free-text survey.</li><li>The reply-to is careers-feedback@example.com.au on every email.</li></ul>
 
-<footer>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</footer>
+<footer><p class="mono">build 3a7a1b9 · generated 2026-11-24T19:00:39+11:00 · fixture #01afd645045c…</p><p>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</p></footer>
 </div>
 </body>
 </html>

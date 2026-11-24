@@ -31,8 +31,9 @@ pub enum Error {
 
     /// A disposition was captured twice for the same application.
     #[error(
-        "application {application} in requisition {requisition} already has disposition {existing}; \
-         submit a correction that supersedes it"
+        "application {} in requisition {requisition} already has disposition {existing}; \
+         submit a correction that supersedes it",
+        crate::redact::id(application.as_str())
     )]
     DuplicateDisposition {
         /// The requisition the application belongs to.
@@ -71,7 +72,11 @@ pub enum Error {
     AlreadySuperseded(DispositionId),
 
     /// A correction tried to supersede another application's record.
-    #[error("disposition {record} belongs to application {owner}, not {application}")]
+    #[error(
+        "disposition {record} belongs to application {}, not {}",
+        crate::redact::id(owner.as_str()),
+        crate::redact::id(application.as_str())
+    )]
     SupersedeMismatch {
         /// The record being superseded.
         record: DispositionId,
@@ -152,7 +157,7 @@ pub enum Error {
     DuplicateApplication(ApplicationId),
 
     /// The application id is not in the imported roster.
-    #[error("application {0} is not in the imported roster")]
+    #[error("application {} is not in the imported roster", crate::redact::id(.0.as_str()))]
     UnknownApplication(ApplicationId),
 
     /// A log ends mid-line, which means the writer died during an append.

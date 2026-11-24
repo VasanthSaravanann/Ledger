@@ -48,6 +48,10 @@ struct Cli {
     /// Pilot workspace directory.
     #[arg(long, global = true, default_value = "ledger-data", value_name = "DIR")]
     data: PathBuf,
+    /// Reveal raw application ids and emails in console output (they are redacted
+    /// to stable #hash handles by default).
+    #[arg(long, global = true)]
+    debug_ids: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -104,6 +108,59 @@ enum Command {
     /// Sign off plan tasks.
     #[command(subcommand)]
     Checklist(ChecklistCommand),
+    /// Enforce retention: tombstone expired PII.
+    Purge(PurgeArgs),
+    /// Snapshot the workspace and migrate its schema.
+    Migrate(MigrateArgs),
+    /// Publish the chain head as an off-host receipt.
+    Anchor(AnchorArgs),
+    /// Resolve a redacted #hash handle back to its record.
+    Find(FindArgs),
+}
+
+#[derive(Debug, Args)]
+struct PurgeArgs {
+    /// Required for a destructive run.
+    #[arg(long)]
+    yes: bool,
+    /// Report what would be purged without writing.
+    #[arg(long)]
+    dry_run: bool,
+    #[arg(long)]
+    operator: Option<String>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Debug, Args)]
+struct MigrateArgs {
+    /// Required for a run that writes a snapshot.
+    #[arg(long)]
+    yes: bool,
+    #[arg(long)]
+    operator: Option<String>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Debug, Args)]
+struct AnchorArgs {
+    /// Also commit the receipt to the workspace's git repository.
+    #[arg(long)]
+    git_commit: bool,
+    #[arg(long)]
+    operator: Option<String>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Debug, Args)]
+struct FindArgs {
+    /// The handle printed in an error, for example #a1b2c3d4.
+    #[arg(long)]
+    hash: String,
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -459,6 +516,9 @@ struct LogQuarantineArgs {
     /// Why the tail is being quarantined; recorded in operator.jsonl.
     #[arg(long)]
     reason: String,
+    /// Required: quarantine truncates the send log.
+    #[arg(long)]
+    yes: bool,
     /// Operator name; defaults to LEDGER_OPERATOR, then USER.
     #[arg(long)]
     operator: Option<String>,
@@ -583,6 +643,7 @@ fn main() -> std::process::ExitCode {
 }
 
 fn execute(cli: Cli) -> Result<()> {
+    ledger::redact::set_debug_ids(cli.debug_ids);
     let store = Store::open(&cli.data)?;
     run(&store, cli.command)
 }
@@ -591,8 +652,12 @@ fn run(store: &Store, command: Command) -> Result<()> {
     // Read-only commands never take the lock; everything else does, so two
     // operators cannot interleave writes into the same workspace.
     let read_only = is_read_only(&command);
+    let mutating = !read_only;
+    let name = command_name(&command);
+    let args = redacted_argv();
     let _lock = if read_only { None } else { Some(store.lock()?) };
-    match command {
+
+    let outcome = match command {
         Command::Init => init(store),
         Command::Demo(DemoCommand::Seed(args)) => demo_seed(store, &args),
         Command::Status(args) => status(store, &args),
@@ -611,7 +676,70 @@ fn run(store: &Store, command: Command) -> Result<()> {
         Command::Metrics(args) => metrics_command(store, &args),
         Command::Review(command) => review(store, command),
         Command::Checklist(command) => checklist(store, command),
+        Command::Purge(args) => purge(store, &args),
+        Command::Migrate(args) => migrate(store, &args),
+        Command::Anchor(args) => anchor(store, &args),
+        Command::Find(args) => find(store, &args),
+    };
+
+    // Every mutating command that succeeded leaves an operator record. The argv is
+    // redacted, so an address in a flag does not end up in the operator log.
+    if mutating && outcome.is_ok() && !records_own_audit(name) {
+        let mut details = BTreeMap::new();
+        details.insert("args".to_owned(), args);
+        details.insert("pid".to_owned(), std::process::id().to_string());
+        let _ = ledger::operator::OperatorLog::open(store).record(ledger::operator::OperatorNote {
+            at: Utc::now(),
+            operator: ledger::operator::identity(None),
+            command: name.to_owned(),
+            note: String::new(),
+            details,
+        });
     }
+    outcome
+}
+
+/// The stable command name recorded in `operator.jsonl`.
+fn command_name(command: &Command) -> &'static str {
+    match command {
+        Command::Init => "init",
+        Command::Demo(_) => "demo seed",
+        Command::Status(_) => "status",
+        Command::Governance(_) => "governance",
+        Command::Gate(_) => "gate",
+        Command::Requisition(_) => "requisition",
+        Command::Templates(_) => "templates",
+        Command::Playbook(_) => "playbook",
+        Command::Ats(_) => "ats import",
+        Command::Disposition(_) => "disposition",
+        Command::Qa(_) => "qa",
+        Command::Dispatch(_) => "dispatch",
+        Command::Log(_) => "log",
+        Command::Reply(_) => "reply",
+        Command::Signal(_) => "signal",
+        Command::Metrics(_) => "metrics",
+        Command::Review(_) => "review",
+        Command::Checklist(_) => "checklist",
+        Command::Purge(_) => "purge",
+        Command::Migrate(_) => "migrate",
+        Command::Anchor(_) => "anchor",
+        Command::Find(_) => "find",
+    }
+}
+
+/// Whether the command already writes a richer record of its own, so the generic
+/// hook does not duplicate it.
+fn records_own_audit(name: &str) -> bool {
+    matches!(name, "purge" | "migrate" | "anchor" | "log")
+}
+
+/// The current argv with email-like tokens redacted.
+fn redacted_argv() -> String {
+    std::env::args()
+        .skip(1)
+        .map(|argument| ledger::redact::text(&argument))
+        .collect::<Vec<String>>()
+        .join(" ")
 }
 
 fn init(store: &Store) -> Result<()> {
@@ -1522,6 +1650,12 @@ fn log(store: &Store, command: LogCommand) -> Result<()> {
             Ok(())
         }
         LogCommand::Quarantine(args) => {
+            if !args.yes {
+                return Err(Error::invalid(
+                    "quarantine",
+                    "this truncates the send log; pass --yes",
+                ));
+            }
             let operator = ledger::operator::identity(args.operator.as_deref());
             let report =
                 ledger::operator::quarantine(store, args.reason.as_str(), operator.as_str())?;
@@ -1780,6 +1914,112 @@ fn checklist(store: &Store, command: ChecklistCommand) -> Result<()> {
     }
 }
 
+fn purge(store: &Store, args: &PurgeArgs) -> Result<()> {
+    let operator = ledger::operator::identity(args.operator.as_deref());
+    let report = if args.dry_run {
+        ledger::retention::preview(store, Utc::now())?
+    } else {
+        if !args.yes {
+            return Err(Error::invalid(
+                "purge",
+                "tombstoning expired PII is destructive; pass --yes (or --dry-run)",
+            ));
+        }
+        ledger::retention::purge(store, &operator, Utc::now())?
+    };
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("cutoff:               {}", report.cutoff.to_rfc3339());
+        println!("dispositions purged:  {}", report.dispositions_purged);
+        println!("dispositions kept:    {}", report.dispositions_retained);
+        println!("ATS rosters purged:   {}", report.rosters_purged);
+        println!(
+            "send log retained:    {} entries (chained; erased only with the workspace)",
+            report.send_log_entries_retained
+        );
+        if args.dry_run {
+            println!("\n(dry run: nothing was written)");
+        } else {
+            println!("\nrecorded a PURGE event in operator.jsonl by {operator}");
+        }
+    }
+    Ok(())
+}
+
+fn migrate(store: &Store, args: &MigrateArgs) -> Result<()> {
+    if !args.yes {
+        return Err(Error::invalid(
+            "migrate",
+            "migration writes a workspace snapshot; pass --yes",
+        ));
+    }
+    let operator = ledger::operator::identity(args.operator.as_deref());
+    let report = ledger::migrate::migrate(store, &operator)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!(
+            "schema:   found v{}, target v{}",
+            report.found_version, report.target_version
+        );
+        println!("snapshot: {}", report.snapshot.display());
+        for change in &report.changes {
+            println!("  - {change}");
+        }
+        println!("chained logs were not rewritten");
+    }
+    Ok(())
+}
+
+fn anchor(store: &Store, args: &AnchorArgs) -> Result<()> {
+    let operator = ledger::operator::identity(args.operator.as_deref());
+    let anchor = ledger::anchor::anchor(store, &operator, args.git_commit)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&anchor)?);
+    } else {
+        println!("anchored {} entries at {}", anchor.entries, anchor.head);
+        println!(
+            "receipt in anchors/ ({}); copy it off this machine",
+            anchor.destination
+        );
+        println!("recorded an ANCHOR event in operator.jsonl by {operator}");
+    }
+    Ok(())
+}
+
+fn find(store: &Store, args: &FindArgs) -> Result<()> {
+    let handle = args.hash.trim();
+    let dispositions = Dispositions::open(store)?;
+    let mut matches: Vec<serde_json::Value> = Vec::new();
+    for record in dispositions.records() {
+        let ids = [
+            ledger::redact::id(record.form.application_id.as_str()),
+            ledger::redact::id(record.form.candidate_email.as_str()),
+        ];
+        if ids.iter().any(|id| id == handle) {
+            matches.push(serde_json::json!({
+                "record": record.id.as_str(),
+                "application": record.form.application_id.as_str(),
+                "requisition": record.form.requisition.as_str(),
+                "disposition": record.form.disposition.to_string(),
+                "candidate_name": record.form.candidate_first_name,
+                "candidate_email": record.form.candidate_email.as_str(),
+            }));
+        }
+    }
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&matches)?);
+    } else if matches.is_empty() {
+        println!("no record matches {handle}");
+    } else {
+        for matched in &matches {
+            println!("{matched}");
+        }
+    }
+    Ok(())
+}
+
 /// Whether a command only reads.
 fn is_read_only(command: &Command) -> bool {
     matches!(
@@ -1796,6 +2036,7 @@ fn is_read_only(command: &Command) -> bool {
             | Command::Review(ReviewCommand::Route(_))
             | Command::Checklist(ChecklistCommand::Show)
             | Command::Governance(GovernanceCommand::Show)
+            | Command::Find(_)
     )
 }
 

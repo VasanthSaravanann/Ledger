@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://ledger-pilot-chi.vercel.app/sitemap.xml

@@ -213,13 +213,46 @@ commit.
 | `3` | invalid input, schema or state (including a torn log tail) |
 | `4` | workspace lock contention |
 
+### Retention, migration and anchoring
+
+| Command | What it does |
+| --- | --- |
+| `ledger purge --yes` | Tombstones PII in dispositions and ATS snapshots older than `policy.retention_days`, records a `PURGE` event. `--dry-run` reports without writing. The **send log is retained**: its PII is inside the hash chain, so it is erased by deleting the workspace at the end of retention, not by selective edits. |
+| `ledger migrate --yes` | Snapshots the workspace to `backups/<UTC>/`, then migrates unchained state. Chained logs are never rewritten; an unknown `schema_version` fails closed. |
+| `ledger anchor [--git-commit]` | Publishes the chain head as `anchors/<UTC>-<head>.json`. Copy it off the machine, or let it commit locally. No network calls, by design. |
+| `ledger find --hash <#handle>` | Resolves a redacted handle printed by an error back to its record. |
+
 `--json` is available on `demo seed`, `dispatch`, `metrics`, `log verify`,
-`log quarantine` and `review route`; the remaining subcommands print prose.
+`log quarantine`, `review route`, `purge`, `migrate` and `anchor`; the remaining
+subcommands print prose.
+
+Console output redacts application ids and email addresses to stable `#hash`
+handles; `--debug-ids` (or `LEDGER_DEBUG_IDS=1`) reveals them. Destructive
+commands (`purge`, `migrate`, `log quarantine`, `demo seed --force`) require an
+explicit flag. The tool never sets `RUST_BACKTRACE`; it simply never prints a
+backtrace itself.
+
+### PII on disk
+
+The workspace directory is `0700` and every state and log file is `0600`,
+enforced on creation regardless of the process umask. `tests/` asserts this.
+
+### Site pages
+
+`/`, `/emails`, `/gates`, `/audit`, `/comparative`, `/demo`, `/format`,
+`/threat-model`, `/verify` and `/cli`, plus `404.html`, `robots.txt` and
+`sitemap.xml`. Every generated page carries build provenance: commit SHA, the
+commit timestamp used as generation time, and the fixture fingerprint. Two runs of
+`scripts/build-site.sh` on one commit are byte-identical, which is what makes the
+CI drift check meaningful. Deployment runs from `.github/workflows/deploy.yml`
+(generate → drift check → `vercel deploy --prebuilt`), because Vercel's build image
+has no Rust toolchain.
 
 ## Supported platforms
 
-macOS (aarch64, x86_64) and Linux (glibc) are supported and tested. **Windows is
-not supported** and no Windows binary is published: nothing here has been run on
+macOS (aarch64, x86_64) and Linux (glibc) are supported and tested; releases are
+built by `.github/workflows/release.yml` with SHA-256 checksums. **Windows is not
+supported** and no Windows binary is published: nothing here has been run on
 it, and shipping an untested cross-compiled binary is worse than not shipping one.
 CSV quirks that Windows users care about — UTF-8 BOM, CRLF, quoted commas,
 embedded newlines — are covered as *input* concerns and tested on macOS.
@@ -252,7 +285,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-101 tests cover: the initial-screen hard filter, the three-variant form, superseding
+111 tests cover: the initial-screen hard filter, the three-variant form, superseding
 corrections, gate unavailability falling back to `FIELD`, the paragraph lint,
 required template slots, QA enforcement, the chain detecting edits and truncation,
 the five metric bands, the routing order, the fixture's determinism and planted

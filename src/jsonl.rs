@@ -58,10 +58,7 @@ impl<T: Serialize> AppendLog<T> {
     /// [`Error::Json`] when the record cannot be serialized.
     pub fn append(&mut self, record: &T) -> Result<()> {
         if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent).map_err(|source| Error::Io {
-                path: parent.to_path_buf(),
-                source,
-            })?;
+            crate::store::ensure_dir(parent)?;
         }
         let line = serde_json::to_string(record)?;
         let mut buffer = Vec::with_capacity(line.len().saturating_add(1));
@@ -76,6 +73,8 @@ impl<T: Serialize> AppendLog<T> {
                 path: self.path.clone(),
                 source,
             })?;
+        // Candidate PII lives in these lines: owner-only, regardless of umask.
+        crate::store::restrict(&self.path, 0o600)?;
         file.write_all(&buffer).map_err(|source| Error::Io {
             path: self.path.clone(),
             source,

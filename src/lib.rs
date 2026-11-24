@@ -17,12 +17,14 @@
 //!   completed disposition, a matching answer, and a recorded QA check.
 //! - [`metrics`] and [`review`] are the five pre-registered metrics and the v2
 //!   routing decision.
-//! - [`policy`] records retention and the escalation owner.
+//! - [`policy`] records retention and the escalation owner; [`redact`] keeps PII
+//!   out of console output.
 //! - [`checklist`] tracks the operational tasks that a person, not a program,
 //!   has to sign off.
 //! - [`demo`] builds the deterministic synthetic fixture, and [`site`] writes the
 //!   artefact pages from the loaded workspace at build time.
 
+pub mod anchor;
 pub mod approval;
 pub mod ats;
 pub mod checklist;
@@ -35,12 +37,15 @@ pub mod id;
 pub mod jsonl;
 pub mod log;
 pub mod metrics;
+pub mod migrate;
 pub mod operator;
 pub mod pipeline;
 pub mod playbook;
 pub mod policy;
 pub mod qa;
+pub mod redact;
 pub mod requisition;
+pub mod retention;
 pub mod review;
 pub mod site;
 pub mod store;

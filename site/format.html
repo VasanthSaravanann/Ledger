@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta property="og:site_name" content="Ledger">
+<meta property="og:url" content="https://ledger-pilot-chi.vercel.app/format">
+<meta property="og:image" content="https://ledger-pilot-chi.vercel.app/og.svg">
+<meta name="twitter:card" content="summary_large_image">
+<title>Ledger — Format specification</title>
+<style>
+:root{--bg:#fbfbfa;--fg:#17181a;--muted:#5f646b;--line:#dcdcd7;--card:#fff;--accent:#1a4fd6;--code:#f2f2ee;--warn:#8a5a00;--fail:#a51b1b;--pass:#1c6b3a}
+@media (prefers-color-scheme:dark){:root{--bg:#111214;--fg:#e8e8e4;--muted:#9aa0a6;--line:#2b2d31;--card:#17191c;--accent:#8fb0ff;--code:#1c1f23;--warn:#e0a44a;--fail:#ff8a8a;--pass:#7fd6a0}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:76ch;margin:0 auto;padding:2.5rem 1.25rem 4rem}
+.banner{display:inline-block;margin:0 0 1.25rem;padding:.3rem .6rem;border:1px solid var(--warn);border-radius:6px;color:var(--warn);font-size:.8125rem;letter-spacing:.02em}
+nav{display:flex;flex-wrap:wrap;gap:.35rem 1rem;margin:0 0 2rem;padding-bottom:.75rem;border-bottom:1px solid var(--line);font-size:.875rem}
+nav a{color:var(--accent);text-decoration:none}
+nav a.active{color:var(--fg);font-weight:600}
+h1{margin:0 0 .5rem;font-size:clamp(1.6rem,4vw,2.1rem);line-height:1.2;letter-spacing:-.02em}
+h2{margin:2.5rem 0 .75rem;font-size:1.1rem}
+h3{margin:1.75rem 0 .4rem;font-size:.95rem}
+p{margin:0 0 .85rem}
+.lede{color:var(--muted);margin-bottom:2rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1rem 1.15rem;margin:0 0 1rem}
+.mono,pre,code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:.8125rem}
+pre{margin:0;padding:.9rem 1rem;background:var(--code);border:1px solid var(--line);border-radius:8px;overflow-x:auto;line-height:1.55;white-space:pre-wrap}
+table{width:100%;border-collapse:collapse;font-size:.8125rem;margin:0 0 1rem}
+th,td{text-align:left;padding:.45rem .5rem .45rem 0;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+.tag{display:inline-block;padding:.05rem .4rem;border:1px solid var(--line);border-radius:4px;font-size:.75rem;color:var(--muted)}
+.pass{color:var(--pass);font-weight:600}
+.fail{color:var(--fail);font-weight:600}
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr))}
+.meta{color:var(--muted);font-size:.8125rem}
+ul{margin:0 0 1rem;padding-left:1.2rem}
+li{margin-bottom:.35rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.8125rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+<p class="banner">Synthetic fixture — no pilot data yet</p>
+<nav><a href="/">Overview</a><a href="/emails">Candidate emails</a><a href="/gates">Gate library</a><a href="/audit">Hash-chain audit</a><a href="/comparative">Comparative paragraph</a><a href="/demo">Recorded run</a><a href="/format" class="active">Format spec</a><a href="/threat-model">Threat model</a></nav>
+<h1>Format specification</h1><div class="doc"><h1>Ledger on-disk format and digest specification</h1>
+<p><strong>Version:</strong> <code>digest_version = 2</code>, <code>schema_version = 1</code>
+<strong>Status:</strong> implemented for the send log; state documents are unversioned (see §9).</p>
+<p>This document is normative. <code>verify_log.py</code> and the Rust implementation are both
+written against it, and the golden fixtures in <code>tests/golden.rs</code> pin it.</p>
+<hr />
+<h2>1. Scope</h2>
+<p>Two artefacts are covered here:</p>
+<ol>
+<li><code>send_log.jsonl</code> — the append-only, hash-chained log of dispatched emails. This
+is the evidentiary artefact.</li>
+<li>The JSON state documents in the workspace (<code>gate_library.json</code>,
+<code>templates.json</code>, <code>playbook.json</code>, <code>requisitions.json</code>, <code>policy.json</code>,
+<code>review.json</code>, <code>checklist.json</code>, <code>demo-summary.json</code>) and the append-only logs
+(<code>dispositions.jsonl</code>, <code>qa.jsonl</code>, <code>blocked.jsonl</code>, <code>replies.jsonl</code>,
+<code>signals.jsonl</code>, plus <code>operator.jsonl</code> when present).</li>
+</ol>
+<p>Only the send log carries a hash chain. The other files are append-only by
+construction (there is no update or delete path in the code) but are not
+individually chained.</p>
+<h2>2. Text encoding</h2>
+<ul>
+<li>All files are UTF-8, with <strong>no BOM</strong>.</li>
+<li>Every string is Unicode <strong>NFC</strong>-normalised before it is hashed.</li>
+<li>Strings are JSON-escaped minimally: <code>"</code> → <code>\"</code>, <code>\</code> → <code>\\</code>, and every code point
+below U+0020 → <code>\u00XX</code> (lowercase hex). <code>'</code> is <strong>not</strong> escaped, and non-ASCII
+characters are emitted as raw UTF-8.</li>
+<li>No other escaping is applied (<code>/</code>, <code>&lt;</code>, <code>&gt;</code>, <code>&amp;</code> stay literal).</li>
+</ul>
+<h2>3. Canonical JSON</h2>
+<p>A canonical object is serialised with:</p>
+<ul>
+<li>keys sorted by <strong>UTF-8 byte order</strong> (equivalently, code-point order for valid
+UTF-8), ascending;</li>
+<li><strong>no whitespace</strong> anywhere — no spaces, tabs, or newlines;</li>
+<li><code>,</code> between members and <code>:</code> between a key and its value;</li>
+<li>no trailing commas;</li>
+<li><strong>integers only</strong>: no floating-point numbers, no exponents, no leading <code>+</code>, no
+leading zeros; the literal is the shortest base-10 form, with <code>-</code> for negatives;</li>
+<li><code>true</code>, <code>false</code>, <code>null</code> literals only;</li>
+<li>arrays preserve their given order (no arrays appear in the digest payload).</li>
+</ul>
+<p>Example:</p>
+<pre><code>{"a":1,"b":"x","c":true,"d":null}
+</code></pre>
+<h2>4. Digest payload</h2>
+<p><code>entry_hash = lowercase_hex(SHA-256(canonical_bytes(payload)))</code> where <code>payload</code> is
+the canonical object containing <strong>exactly</strong> this allowlist — no more, no fewer:</p>
+<table><thead><tr><th>Field</th><th>Type</th><th>Encoding</th></tr></thead><tbody>
+<tr><td><code>digest_version</code></td><td>integer</td><td>always <code>2</code></td></tr>
+<tr><td><code>seq</code></td><td>integer</td><td>zero-based chain position</td></tr>
+<tr><td><code>prev_hash</code></td><td>string</td><td>64 lowercase hex chars, or the genesis constant</td></tr>
+<tr><td><code>send_id</code></td><td>string</td><td><code>SND-</code> + six digits</td></tr>
+<tr><td><code>application_id</code></td><td>string</td><td>as captured</td></tr>
+<tr><td><code>candidate_first_name</code></td><td>string</td><td>as captured, NFC</td></tr>
+<tr><td><code>candidate_email</code></td><td>string</td><td>lowercased at capture</td></tr>
+<tr><td><code>requisition</code></td><td>string</td><td><code>REQ_ID</code></td></tr>
+<tr><td><code>recruiter</code></td><td>string</td><td>named individual</td></tr>
+<tr><td><code>decision_maker</code></td><td>string</td><td>named individual</td></tr>
+<tr><td><code>disposition_id</code></td><td>string</td><td><code>DSP-</code> + four digits</td></tr>
+<tr><td><code>disposition</code></td><td>string</td><td><code>GATE</code> | <code>FIELD</code> | <code>ADMIN</code></td></tr>
+<tr><td><code>gate_code</code></td><td>string or null</td><td><code>GATE-01</code>..<code>GATE-05</code>, null unless <code>GATE</code></td></tr>
+<tr><td><code>captured_at</code></td><td>integer</td><td>epoch <strong>seconds</strong>, UTC</td></tr>
+<tr><td><code>sent_at</code></td><td>integer</td><td>epoch <strong>seconds</strong>, UTC</td></tr>
+<tr><td><code>template</code></td><td>string</td><td><code>gate</code> | <code>field</code> | <code>admin</code></td></tr>
+<tr><td><code>text_version</code></td><td>string</td><td><code>v&lt;major&gt;.&lt;minor&gt;</code></td></tr>
+<tr><td><code>subject</code></td><td>string</td><td>exact merged subject</td></tr>
+<tr><td><code>body</code></td><td>string</td><td><code>RENDERED_BODY_FULL</code>, exact merged body</td></tr>
+<tr><td><code>text_digest</code></td><td>string</td><td>SHA-256 of <code>subject + "\n" + body</code>, UTF-8</td></tr>
+<tr><td><code>delivery_status</code></td><td>string</td><td><code>queued</code> | <code>sent</code> | <code>failed</code></td></tr>
+</tbody></table>
+<p>The stored <code>disposition</code> and <code>gate_code</code> fields are written as exactly these codes
+(<code>"GATE"</code>, <code>"GATE-03"</code>), so the stored field and the digest field are the same
+string. A reader may accept the legacy kebab-case spellings (<code>"gate"</code>,
+<code>"right-to-work"</code>) on input, but a writer always emits codes.</p>
+<p>Excluded from the payload, by design:</p>
+<ul>
+<li><code>entry_hash</code> — it is the output.</li>
+<li><code>schema_version</code> — advisory metadata (§8). Excluding it lets a reader fail
+closed on an unknown schema without invalidating every earlier digest, which is
+what §4.4 of V4 requires.</li>
+</ul>
+<p>Consequence, stated plainly: the digest covers <strong>values, not layout</strong>. Reordering
+the JSON keys of a stored line, or re-indenting it, does <strong>not</strong> change the digest
+and is <strong>not</strong> detected. Editing any covered value — including one byte of
+<code>body</code> — is detected. This is the intended trade: canonicalisation is what makes
+an independent verifier possible.</p>
+<h2>5. Timestamps</h2>
+<ul>
+<li>Stored twice: as RFC 3339 with a <code>Z</code> offset for humans, and in the digest as
+<strong>epoch seconds</strong> (UTC, integer).</li>
+<li>On write, both <code>captured_at</code> and <code>sent_at</code> are truncated to whole seconds, so
+the digest covers the entire stored instant. Sub-second components are never
+written to the send log.</li>
+<li>Ordering rules enforced by <code>log verify</code>:
+<ul>
+<li><code>captured_at &lt;= sent_at</code> for every entry;</li>
+<li><code>sent_at</code> is <strong>non-decreasing</strong> along the chain;</li>
+<li><code>captured_at</code> has no cross-entry ordering constraint: a recruiter may capture
+decisions out of order.</li>
+</ul>
+</li>
+</ul>
+<h2>6. Chain</h2>
+<ul>
+<li>Genesis constant: 64 <code>0</code> characters.
+<code>0000000000000000000000000000000000000000000000000000000000000000</code></li>
+<li>Entry <code>seq = 0</code> must have <code>prev_hash</code> equal to the genesis constant. There is no
+genesis <em>line</em>; genesis is the empty chain.</li>
+<li>Entry <code>seq = n &gt; 0</code> must have <code>prev_hash</code> equal to entry <code>n-1</code>'s <code>entry_hash</code>.</li>
+<li>Sequence numbers must be <code>0, 1, 2, …</code> with no gaps.</li>
+<li>Verification recomputes every digest from the parsed fields. On any mismatch,
+<code>log verify</code> reports the failing <code>seq</code> and refuses to append.</li>
+</ul>
+<h2>7. Line framing</h2>
+<ul>
+<li>One canonical-free JSON object per line, terminated by a single <code>\n</code>.</li>
+<li>Lines are appended, never rewritten: <code>write_all(line)</code> → <code>fsync(file)</code> →
+<code>fsync(parent directory)</code>.</li>
+<li>A trailing fragment that is not a complete, newline-terminated JSON object is a
+<strong>torn write</strong>. It is never silently dropped: the log refuses to load, and the
+only recovery is <code>log quarantine</code>, which moves the fragment to
+<code>send_log.jsonl.&lt;timestamp&gt;.quarantine</code> together with an operator note, and
+records the action in <code>operator.jsonl</code>.</li>
+</ul>
+<h2>8. Schema version</h2>
+<p><code>send_log.jsonl</code> entries carry <code>"schema_version": 1</code>.</p>
+<ul>
+<li>A reader must reject any entry whose <code>schema_version</code> is greater than the
+version it knows, with the reason <code>unknown schema_version</code>.</li>
+<li><code>schema_version</code> is not covered by the digest (§4), so bumping it does not
+invalidate prior digests.</li>
+<li>Adding an optional field is a non-breaking change when the field is outside the
+digest allowlist; adding a field <strong>to</strong> the allowlist is a <code>digest_version</code> bump
+and requires regenerating golden fixtures.</li>
+</ul>
+<h2>9. Independent verification</h2>
+<p><code>verify_log.py</code> is a standard-library-only implementation of §2–§6. It shares no
+code with the Rust crate and is run against a real fixture in <code>tests/independent.rs</code>,
+so the two cannot drift apart silently.</p>
+<pre><code>./verify_log.py pilot/send_log.jsonl
+# OK pilot/send_log.jsonl: 147 entries verified
+</code></pre>
+<h2>10. Known gaps</h2>
+<p>Honest list, so the spec is not mistaken for more than it is:</p>
+<ol>
+<li>State documents are not stamped with <code>schema_version</code> yet. They fail closed only
+in the sense that a missing required field is a deserialisation error.</li>
+<li>The disposition, QA, blocked, reply and signal logs are append-only in code but
+not chained; each line is plain JSON with no digest.</li>
+<li><code>operator.jsonl</code> exists for <code>log quarantine</code> only; the other mutating commands
+are not yet written to it.</li>
+<li>The chain is a local file. Anyone with write access to the directory can replace
+the whole file with a re-chained forgery; only off-host replication closes that.
+See <code>THREAT_MODEL.md</code>.</li>
+</ol>
+</div>
+<footer><p class="mono">build 3a7a1b9 · generated 2026-11-24T19:00:39+11:00 · fixture #01afd645045c…</p><p>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</p></footer>
+</div>
+</body>
+</html>

@@ -186,14 +186,28 @@ pub fn dispatch(
                     )?;
                     continue;
                 }
-                if job
+                // Failure: the gate's requisition facts are undocumented.
+                if !job
                     .library
                     .missing_facts(*gate, &job.requisition.facts)
                     .is_empty()
                 {
-                    if let Some(declared) = applicant.knockout(*gate)
-                        && declared != *answer
-                    {
+                    block(
+                        job,
+                        blocked_log,
+                        &mut report,
+                        application_id,
+                        Some(&applicant.email),
+                        BlockReason::GateUnavailable { gate: *gate },
+                    )?;
+                    continue;
+                }
+
+                // Failure: the form contradicts the candidate's own ATS answer.
+                // Nested deliberately: `if let ... && ...` needs Rust 1.88 and the
+                // crate's declared MSRV is 1.85.
+                if let Some(declared) = applicant.knockout(*gate) {
+                    if declared != *answer {
                         block(
                             job,
                             blocked_log,
@@ -208,17 +222,8 @@ pub fn dispatch(
                         )?;
                         continue;
                     }
-                } else {
-                    block(
-                        job,
-                        blocked_log,
-                        &mut report,
-                        application_id,
-                        Some(&applicant.email),
-                        BlockReason::GateUnavailable { gate: *gate },
-                    )?;
-                    continue;
                 }
+
                 match job.library.copy_for(*gate) {
                     Some(copy) => Some(copy.render(&job.requisition.facts)?),
                     None => {

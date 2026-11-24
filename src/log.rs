@@ -428,7 +428,7 @@ fn verify_chain(path: &Path, entries: &[SendEntry]) -> Result<()> {
         }
         if entry.schema_version > SCHEMA_VERSION {
             return Err(corrupt(format!(
-                "unknown schema_version {} (this build knows {SCHEMA_VERSION})",
+                "unknown schema_version {} (this build knows {SCHEMA_VERSION}); upgrade ledger",
                 entry.schema_version
             )));
         }
@@ -508,7 +508,9 @@ impl std::fmt::Display for BlockReason {
             ),
             Self::EmailMismatch { export, form } => write!(
                 formatter,
-                "form email {form} does not match the ATS export email {export}"
+                "form email {} does not match the ATS export email {}",
+                crate::redact::id(form.as_str()),
+                crate::redact::id(export.as_str())
             ),
             Self::AwaitingSecondPersonQa { scope } => {
                 write!(

@@ -6,6 +6,8 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
@@ -55,6 +57,33 @@ pub struct Store {
     root: PathBuf,
 }
 
+/// Creates any parent directories with owner-only permissions.
+pub fn ensure_dir(path: &Path) -> Result<()> {
+    fs::create_dir_all(path).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    restrict(path, 0o700)
+}
+
+/// Sets file permissions to `0600` (or the mode given) on Unix; no-op elsewhere.
+///
+/// Declared platforms are macOS and Linux, so the Unix path is the real one.
+pub fn restrict(path: &Path, mode: u32) -> Result<()> {
+    #[cfg(unix)]
+    {
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|source| Error::Io {
+            path: path.to_path_buf(),
+            source,
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, mode);
+        Ok(())
+    }
+}
+
 /// Holds the workspace lock until dropped.
 #[derive(Debug)]
 pub struct WorkspaceLock {
@@ -87,6 +116,8 @@ impl Store {
             path: root.clone(),
             source,
         })?;
+        // The workspace holds candidate PII: nobody else on the machine may read it.
+        restrict(&root, 0o700)?;
         Ok(Self { root })
     }
 
@@ -132,6 +163,7 @@ impl Store {
             path: temp.clone(),
             source,
         })?;
+        restrict(&temp, 0o600)?;
         file.write_all(text.as_bytes())
             .map_err(|source| Error::Io {
                 path: temp.clone(),

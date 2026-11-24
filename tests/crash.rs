@@ -158,6 +158,7 @@ fn a_torn_tail_blocks_restart_until_it_is_quarantined() {
             "killed between write and newline",
             "--operator",
             "qa-patel",
+            "--yes",
         ])
         .output()
         .expect("run ledger");

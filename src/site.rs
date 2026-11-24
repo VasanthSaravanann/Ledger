@@ -22,6 +22,12 @@ use crate::requisition::{Comparative, Requisition};
 use crate::store::Store;
 use crate::template::{MergeContext, Templates, render};
 
+/// Provenance for the pages generated in this process.
+static PROVENANCE: std::sync::OnceLock<Provenance> = std::sync::OnceLock::new();
+
+/// The public site's canonical origin, used by the sitemap and OG metadata.
+pub const ORIGIN: &str = "https://ledger-pilot-chi.vercel.app";
+
 /// The four Hiring-Manager elicitation questions, verbatim from V2.md.
 pub const ELICITATION_QUESTIONS: [&str; 4] = [
     "What did all shortlisted applicants demonstrate that most applicants did not?",
@@ -45,13 +51,44 @@ pub struct ExportReport {
 }
 
 /// The page routes, in navigation order.
-pub const ROUTES: [(&str, &str); 5] = [
+pub const ROUTES: [(&str, &str); 7] = [
     ("emails", "Candidate emails"),
     ("gates", "Gate library"),
     ("audit", "Hash-chain audit"),
     ("comparative", "Comparative paragraph"),
     ("demo", "Recorded run"),
+    ("format", "Format spec"),
+    ("threat-model", "Threat model"),
 ];
+
+/// The build provenance stamped into every page footer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Provenance {
+    /// The commit the pages were generated from.
+    pub build_sha: String,
+    /// When they were generated, UTC.
+    pub generated_at: String,
+    /// The fixture fingerprint the pages were generated from.
+    pub fixture_hash: String,
+}
+
+impl Provenance {
+    /// Reads provenance from the build environment, falling back to the fixture.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Invalid`] when the fixture has not been seeded, since the
+    /// fixture hash is the one value that must be real.
+    pub fn from_env(store: &Store) -> Result<Self> {
+        let fixture_hash = crate::demo::summary(store)?.fingerprint;
+        Ok(Self {
+            build_sha: std::env::var("LEDGER_BUILD_SHA").unwrap_or_else(|_| "dev".to_owned()),
+            generated_at: std::env::var("LEDGER_GENERATED_AT")
+                .unwrap_or_else(|_| chrono::Utc::now().to_rfc3339()),
+            fixture_hash,
+        })
+    }
+}
 
 /// Writes the artefact pages into `out_dir`.
 ///
@@ -65,6 +102,9 @@ pub fn export_html(store: &Store, out_dir: impl AsRef<Path>) -> Result<ExportRep
         path: out_dir.to_path_buf(),
         source,
     })?;
+
+    // Set before any page is rendered: the shell reads it from the global.
+    let _ = PROVENANCE.set(Provenance::from_env(store)?);
 
     let library: GateLibrary = store
         .load(crate::store::GATE_LIBRARY)?
@@ -134,11 +174,171 @@ pub fn export_html(store: &Store, out_dir: impl AsRef<Path>) -> Result<ExportRep
     })?;
     pages.push(demo);
 
+    let format = out_dir.join("format.html");
+    fs::write(
+        &format,
+        doc_page("Format specification", "format", "FORMAT_SPEC.md")?,
+    )
+    .map_err(|source| Error::Io {
+        path: format.clone(),
+        source,
+    })?;
+    pages.push(format);
+
+    let threat = out_dir.join("threat-model.html");
+    fs::write(
+        &threat,
+        doc_page("Threat model", "threat-model", "THREAT_MODEL.md")?,
+    )
+    .map_err(|source| Error::Io {
+        path: threat.clone(),
+        source,
+    })?;
+    pages.push(threat);
+
+    let verifier = out_dir.join("verify.html");
+    fs::write(&verifier, verifier_page()?).map_err(|source| Error::Io {
+        path: verifier.clone(),
+        source,
+    })?;
+    pages.push(verifier);
+
+    let cli = out_dir.join("cli.html");
+    fs::write(&cli, cli_page(out_dir)?).map_err(|source| Error::Io {
+        path: cli.clone(),
+        source,
+    })?;
+    pages.push(cli);
+
+    let not_found = out_dir.join("404.html");
+    fs::write(
+        &not_found,
+        shell(
+            "Not found",
+            "",
+            "<h1>Not found</h1><p>The page you asked for is not part of this site. \
+             Start at the <a href=\"/\">overview</a>, or read the \
+             <a href=\"/format\">format specification</a>.</p>",
+        ),
+    )
+    .map_err(|source| Error::Io {
+        path: not_found.clone(),
+        source,
+    })?;
+
+    write_text(
+        out_dir,
+        "robots.txt",
+        &format!("User-agent: *\nAllow: /\nSitemap: {ORIGIN}/sitemap.xml\n"),
+    )?;
+    write_text(out_dir, "sitemap.xml", &sitemap())?;
+    write_text(out_dir, "og.svg", OG_SVG)?;
+
     Ok(ExportReport {
         pages,
         audit_valid,
         audit_tampered_detected: tamper_detected,
     })
+}
+
+/// Writes a sibling text file.
+fn write_text(out_dir: &Path, name: &str, body: &str) -> Result<()> {
+    let path = out_dir.join(name);
+    fs::write(&path, body).map_err(|source| Error::Io { path, source })
+}
+
+/// The sitemap for the generated routes.
+fn sitemap() -> String {
+    let mut routes: Vec<&str> = vec![
+        "",
+        "emails",
+        "gates",
+        "audit",
+        "comparative",
+        "demo",
+        "format",
+        "threat-model",
+        "verify",
+        "cli",
+    ];
+    routes.sort_unstable();
+    let mut out = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n         <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n",
+    );
+    for route in routes {
+        out.push_str(&format!("  <url><loc>{ORIGIN}/{route}</loc></url>\n"));
+    }
+    out.push_str("</urlset>\n");
+    out
+}
+
+/// A minimal OpenGraph card, used by `og:image`.
+const OG_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#111214"/>
+  <text x="80" y="240" fill="#e8e8e4" font-family="ui-sans-serif,system-ui,sans-serif" font-size="64" font-weight="600">Manually sent,</text>
+  <text x="80" y="320" fill="#e8e8e4" font-family="ui-sans-serif,system-ui,sans-serif" font-size="64" font-weight="600">machine-enforced.</text>
+  <text x="80" y="420" fill="#9aa0a6" font-family="ui-monospace,Menlo,monospace" font-size="28">Ledger · audit-grade candidate feedback pilot</text>
+  <text x="80" y="520" fill="#8fb0ff" font-family="ui-monospace,Menlo,monospace" font-size="24">Synthetic fixture — no pilot data yet</text>
+</svg>
+"##;
+
+/// Renders one of the committed markdown specifications as a page.
+fn doc_page(title: &str, route: &str, file: &str) -> Result<String> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(file);
+    let markdown = fs::read_to_string(&path).map_err(|source| Error::Io {
+        path: path.clone(),
+        source,
+    })?;
+    let mut options = pulldown_cmark::Options::empty();
+    options.insert(pulldown_cmark::Options::ENABLE_TABLES);
+    options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
+    let parser = pulldown_cmark::Parser::new_ext(&markdown, options);
+    let mut html = String::new();
+    pulldown_cmark::html::push_html(&mut html, parser);
+    Ok(shell(
+        title,
+        route,
+        &format!("<h1>{}</h1><div class=\"doc\">{html}</div>", escape(title)),
+    ))
+}
+
+/// Publishes the independent verifier's source, so a reviewer can read it.
+fn verifier_page() -> Result<String> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("verify_log.py");
+    let source = fs::read_to_string(&path).map_err(|source| Error::Io {
+        path: path.clone(),
+        source,
+    })?;
+    Ok(shell(
+        "Independent verifier",
+        "verify",
+        &format!(
+            "<h1>Independent verifier</h1>\
+             <p class=\"lede\">Standard library only. No part of the Rust crate is used: it \
+             re-derives every digest from <a href=\"/format\">the format specification</a>. \
+             Run it against a log with <code>./verify_log.py pilot/send_log.jsonl</code>.</p>\
+             <pre>{}</pre>",
+            escape(&source)
+        ),
+    ))
+}
+
+/// Publishes the CLI surface captured at build time.
+fn cli_page(out_dir: &Path) -> Result<String> {
+    let path = out_dir.join("cli.txt");
+    let help = fs::read_to_string(&path).unwrap_or_else(|_| {
+        "CLI help was not captured in this build. Run `ledger --help` locally.".to_owned()
+    });
+    Ok(shell(
+        "CLI reference",
+        "cli",
+        &format!(
+            "<h1>CLI reference</h1>\
+             <p class=\"lede\">Every command, flag, exit code and JSON contract, captured from \
+             the binary during this build.</p><pre>{}</pre>",
+            escape(&help)
+        ),
+    ))
 }
 
 fn not_seeded(what: &str) -> Error {
@@ -149,7 +349,8 @@ fn not_seeded(what: &str) -> Error {
 }
 
 /// The shared page shell: no external stylesheet, no scripts.
-fn shell(title: &str, current: &str, body: &str) -> String {
+fn shell_with(title: &str, current: &str, body: &str, provenance: Option<&Provenance>) -> String {
+    let provenance = provenance.or_else(|| PROVENANCE.get());
     let nav: String = ROUTES
         .iter()
         .map(|(route, label)| {
@@ -163,6 +364,15 @@ fn shell(title: &str, current: &str, body: &str) -> String {
         .collect::<Vec<String>>()
         .join("");
 
+    let provenance = provenance.map_or_else(String::new, |provenance| {
+        format!(
+            "<p class=\"mono\">build {} · generated {} · fixture #{}…</p>",
+            escape(&provenance.build_sha),
+            escape(&provenance.generated_at),
+            escape(provenance.fixture_hash.get(0..12).unwrap_or("unknown"))
+        )
+    });
+
     format!(
         r#"<!doctype html>
 <html lang="en-AU">
@@ -170,6 +380,10 @@ fn shell(title: &str, current: &str, body: &str) -> String {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
+<meta property="og:site_name" content="Ledger">
+<meta property="og:url" content="{ORIGIN}/{current}">
+<meta property="og:image" content="{ORIGIN}/og.svg">
+<meta name="twitter:card" content="summary_large_image">
 <title>Ledger — {title}</title>
 <style>
 :root{{--bg:#fbfbfa;--fg:#17181a;--muted:#5f646b;--line:#dcdcd7;--card:#fff;--accent:#1a4fd6;--code:#f2f2ee;--warn:#8a5a00;--fail:#a51b1b;--pass:#1c6b3a}}
@@ -207,12 +421,17 @@ footer{{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:
 <p class="banner">{SYNTHETIC_BANNER}</p>
 <nav><a href="/">Overview</a>{nav}</nav>
 {body}
-<footer>Generated at build time from <code>ledger</code> CLI output. {SYNTHETIC_BANNER}.</footer>
+<footer>{provenance}<p>Generated at build time from <code>ledger</code> CLI output. {SYNTHETIC_BANNER}.</p></footer>
 </div>
 </body>
 </html>
 "#
     )
+}
+
+/// Renders a page shell without provenance (used by non-artefact pages).
+fn shell(title: &str, current: &str, body: &str) -> String {
+    shell_with(title, current, body, None)
 }
 
 /// Escapes text for HTML.

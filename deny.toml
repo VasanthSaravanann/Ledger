@@ -2,6 +2,13 @@
 [advisories]
 version = 2
 yanked = "deny"
+# chrono 0.4 is flagged unmaintained, not vulnerable. Migrating to `jiff` touches
+# every timestamp path, so it is a scheduled change rather than a rush one; see
+# CONTRIBUTING.md. This ignore is reviewed on 2026-12-31 and must not be extended
+# without recording why in that file.
+ignore = [
+  { id = "RUSTSEC-2026-0543", reason = "chrono 0.4 unmaintained but not vulnerable; jiff migration tracked in CONTRIBUTING.md, review by 2026-12-31" },
+]
 
 [licenses]
 version = 2

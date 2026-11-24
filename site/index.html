@@ -212,6 +212,10 @@
         <a href="/audit">Hash-chain audit</a>
         <a href="/comparative">Comparative paragraph</a>
         <a href="/demo">Recorded run</a>
+        <a href="/format">Format spec</a>
+        <a href="/threat-model">Threat model</a>
+        <a href="/verify">Independent verifier</a>
+        <a href="/cli">CLI</a>
       </nav>
 
       <p class="eyebrow">v2 pilot · one requisition · initial screen only</p>
@@ -285,6 +289,13 @@
             <td>
               The four elicitation questions, the approved paragraph, and three drafts the linter
               rejected, with the exact rule that fired.
+            </td>
+          </tr>
+          <tr>
+            <td><a href="/format">/format</a> · <a href="/threat-model">/threat-model</a> · <a href="/verify">/verify</a> · <a href="/cli">/cli</a></td>
+            <td>
+              The normative byte format, the threat model, the stdlib-only verifier's
+              source, and the CLI surface captured from the binary at build time.
             </td>
           </tr>
           <tr>
@@ -388,6 +399,12 @@ ledger demo seed --data pilot --force</code></pre>
           The tool renders the exact text, applies the three circuit-breakers, and records the send.
           It never sends email and never calls the ATS — per the pilot's scope, dispatch stays
           manual.
+        </p>
+        <p>
+          Retention, migration and chain-head anchoring are CLI commands
+          (<code>ledger purge</code>, <code>ledger migrate</code>,
+          <code>ledger anchor</code>); the workspace is <code>0700</code> and every
+          state file <code>0600</code>.
         </p>
         <p>
           Synthetic fixture — no pilot data yet. Source:

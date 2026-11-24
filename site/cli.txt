@@ -1,0 +1,359 @@
+Implements V2.md: a locked GATE/FIELD/ADMIN disposition form with named decision makers and superseding corrections, five versioned gate blocks with requisition facts, a linted role-level paragraph, three signed-off templates, a five-scenario reply playbook, a hard initial-screen filter, second-person QA, an append-only hash-chained send log, five pre-registered metrics, and the v2 routing decision.
+
+Usage: ledger [OPTIONS] <COMMAND>
+
+Commands:
+  init         Seed the workspace: gate copy, templates, playbook, policy
+  demo         Build the deterministic synthetic fixture (no pilot data)
+  status       Show the task sheet and the evidence the workspace holds
+  governance   Show or set retention and the escalation owner
+  gate         Inspect, approve, and version the Tier 0 gate copy
+  requisition  Create, document, approve, and inspect requisitions
+  templates    Inspect and approve the three master templates
+  playbook     Inspect and approve the five reply scripts
+  ats          Import the ATS export
+  disposition  Capture, correct, and list dispositions
+  qa           Record the second-person QA check
+  dispatch     Render and dispatch feedback under the circuit-breakers
+  log          Verify or export the send log
+  reply        Record candidate replies
+  signal       Record candidate-value signals
+  metrics      Compute the five metrics
+  review       Record criteria feasibility and compute the v2 routing
+  checklist    Sign off plan tasks
+  purge        Enforce retention: tombstone expired PII
+  migrate      Snapshot the workspace and migrate its schema
+  anchor       Publish the chain head as an off-host receipt
+  find         Resolve a redacted #hash handle back to its record
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>
+          Pilot workspace directory
+          
+          [default: ledger-data]
+
+      --debug-ids
+          Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+$ ledger init --help
+Seed the workspace: gate copy, templates, playbook, policy
+
+Usage: ledger init [OPTIONS]
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger demo --help
+Build the deterministic synthetic fixture (no pilot data)
+
+Usage: ledger demo [OPTIONS] <COMMAND>
+
+Commands:
+  seed  Build the deterministic fixture for REQ-2026-014
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger status --help
+Show the task sheet and the evidence the workspace holds
+
+Usage: ledger status [OPTIONS]
+
+Options:
+      --data <DIR>                 Pilot workspace directory [default: ledger-data]
+      --requisition <REQUISITION>  Restrict the evidence summary to one requisition
+      --debug-ids                  Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help                       Print help
+
+$ ledger governance --help
+Show or set retention and the escalation owner
+
+Usage: ledger governance [OPTIONS] <COMMAND>
+
+Commands:
+  show  Print retention, escalation owner, and SLA
+  set   Set retention and/or the escalation owner
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger gate --help
+Inspect, approve, and version the Tier 0 gate copy
+
+Usage: ledger gate [OPTIONS] <COMMAND>
+
+Commands:
+  list          List the five blocks, versions, and required facts
+  approve       Sign off the copy library in one pass
+  bump-version  Bump one block's TEXT_VERSION (voids sign-off)
+  help          Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger requisition --help
+Create, document, approve, and inspect requisitions
+
+Usage: ledger requisition [OPTIONS] <COMMAND>
+
+Commands:
+  create       Create a requisition with its documented facts
+  fact         Set or update one requisition fact
+  comparative  Elicit the role-level comparative paragraph
+  approve      Approve a block, the requisition copy, or the comparative paragraph
+  show         Show one requisition and what still blocks dispatch
+  list         List every requisition
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger templates --help
+Inspect and approve the three master templates
+
+Usage: ledger templates [OPTIONS] <COMMAND>
+
+Commands:
+  show     Show the three templates and their sign-off state
+  approve  Sign off all three in one pass
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger playbook --help
+Inspect and approve the five reply scripts
+
+Usage: ledger playbook [OPTIONS] <COMMAND>
+
+Commands:
+  show     Show the five scripts, sign-off state, and escalation
+  script   Print one script
+  approve  Sign off the playbook in one pass
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger ats --help
+Import the ATS export
+
+Usage: ledger ats [OPTIONS] <COMMAND>
+
+Commands:
+  import  Import an ATS CSV export, applying the initial-screen filter
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger disposition --help
+Capture, correct, and list dispositions
+
+Usage: ledger disposition [OPTIONS] <COMMAND>
+
+Commands:
+  record   Capture one disposition, or a correction
+  list     List current dispositions for a requisition
+  history  Show one application's correction chain
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger qa --help
+Record the second-person QA check
+
+Usage: ledger qa [OPTIONS] <COMMAND>
+
+Commands:
+  record  Record one second-person check
+  list    List recorded checks
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger dispatch --help
+Render and dispatch feedback under the circuit-breakers
+
+Usage: ledger dispatch [OPTIONS] --requisition <REQUISITION>
+
+Options:
+      --data <DIR>                 Pilot workspace directory [default: ledger-data]
+      --requisition <REQUISITION>  
+      --debug-ids                  Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --preview                    Render and report without writing either log
+      --status <STATUS>            DELIVERY_STATUS to record: queued, sent, or failed [default: sent]
+      --export-html <DIR>          Write the build-time artefact pages into this directory
+      --json                       Print the run as JSON
+      --allow-blocked              Exit 0 even when attempts were blocked (exit 2 is the default for a commit)
+  -h, --help                       Print help
+
+$ ledger log --help
+Verify or export the send log
+
+Usage: ledger log [OPTIONS] <COMMAND>
+
+Commands:
+  verify      Verify the hash chain and print its head
+  export      Export the send log as CSV with REPLY_RECEIVED_FLAG
+  quarantine  Preserve a torn trailing line and restore chain continuity
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger reply --help
+Record candidate replies
+
+Usage: ledger reply [OPTIONS] <COMMAND>
+
+Commands:
+  record  Record replies received in the monitored mailbox
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger signal --help
+Record candidate-value signals
+
+Usage: ledger signal [OPTIONS] <COMMAND>
+
+Commands:
+  record  Record candidate-value signals from the one-click links
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger metrics --help
+Compute the five metrics
+
+Usage: ledger metrics [OPTIONS] --requisition <REQUISITION>
+
+Options:
+      --data <DIR>                 Pilot workspace directory [default: ledger-data]
+      --requisition <REQUISITION>  
+      --debug-ids                  Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --json                       Print as JSON
+  -h, --help                       Print help
+
+$ ledger review --help
+Record criteria feasibility and compute the v2 routing
+
+Usage: ledger review [OPTIONS] <COMMAND>
+
+Commands:
+  criteria  Record whether HM and Legal agreed the criteria
+  route     Compute the v2 routing decision
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger checklist --help
+Sign off plan tasks
+
+Usage: ledger checklist [OPTIONS] <COMMAND>
+
+Commands:
+  done  Mark a plan task done
+  show  Print the task sheet
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+      --data <DIR>  Pilot workspace directory [default: ledger-data]
+      --debug-ids   Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+  -h, --help        Print help
+
+$ ledger purge --help
+Enforce retention: tombstone expired PII
+
+Usage: ledger purge [OPTIONS]
+
+Options:
+      --data <DIR>           Pilot workspace directory [default: ledger-data]
+      --yes                  Required for a destructive run
+      --debug-ids            Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --dry-run              Report what would be purged without writing
+      --operator <OPERATOR>  
+      --json                 
+  -h, --help                 Print help
+
+$ ledger migrate --help
+Snapshot the workspace and migrate its schema
+
+Usage: ledger migrate [OPTIONS]
+
+Options:
+      --data <DIR>           Pilot workspace directory [default: ledger-data]
+      --yes                  Required for a run that writes a snapshot
+      --debug-ids            Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator <OPERATOR>  
+      --json                 
+  -h, --help                 Print help
+
+$ ledger anchor --help
+Publish the chain head as an off-host receipt
+
+Usage: ledger anchor [OPTIONS]
+
+Options:
+      --data <DIR>           Pilot workspace directory [default: ledger-data]
+      --git-commit           Also commit the receipt to the workspace's git repository
+      --debug-ids            Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --operator <OPERATOR>  
+      --json                 
+  -h, --help                 Print help
+
+$ ledger find --help
+Resolve a redacted #hash handle back to its record
+
+Usage: ledger find [OPTIONS] --hash <HASH>
+
+Options:
+      --data <DIR>   Pilot workspace directory [default: ledger-data]
+      --hash <HASH>  The handle printed in an error, for example #a1b2c3d4
+      --debug-ids    Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
+      --json         
+  -h, --help         Print help
+
