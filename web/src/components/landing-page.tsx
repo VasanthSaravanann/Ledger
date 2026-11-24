@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { LockKeyhole } from "lucide-react";
+
+import { BrandMark } from "@/components/brand-mark";
+import { Button } from "@/components/ui/button";
 
 /*
  * The public explainer for the pilot. It carries the workspace's tokens (paper,
@@ -187,17 +191,25 @@ export function LandingPage() {
 
   return (
     <div className="lp">
-      <header className="lp-bar wrap">
-        <Link to="/" className="lp-word">
-          ledger<span>.</span>
-        </Link>
-        <nav className="lp-bar-links" aria-label="Sections">
-          <a href="#how">How it works</a>
-          <a href="#why">Why it matters</a>
-          <Link to="/triage" className="lp-enter">
-            Open the workspace
-          </Link>
-        </nav>
+      <header className="lp-bar">
+        <div className="lp-bar-inner wrap">
+          <BrandMark />
+          <nav className="lp-bar-links" aria-label="Sections">
+            <a href="#how" className="lp-bar-link">
+              How it works
+            </a>
+            <a href="#why" className="lp-bar-link">
+              Why it matters
+            </a>
+            <span className="status FIELD">
+              <LockKeyhole size={10} />
+              UI preview
+            </span>
+            <Button asChild>
+              <Link to="/triage">Open the workspace</Link>
+            </Button>
+          </nav>
+        </div>
       </header>
 
       <main className="lp-main wrap">
@@ -213,12 +225,12 @@ export function LandingPage() {
             breakers before anything left.
           </p>
           <div className="lp-actions">
-            <Link to="/triage" className="lp-button">
-              Open the sample workspace
-            </Link>
-            <a className="lp-link" href="#how">
-              See how a rejection is recorded
-            </a>
+            <Button asChild>
+              <Link to="/triage">Open the sample workspace</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <a href="#how">See how a rejection is recorded</a>
+            </Button>
           </div>
         </section>
 
@@ -251,9 +263,9 @@ export function LandingPage() {
                 </div>
                 <div className="lp-doc-foot">
                   <div>
-                    <button type="button" className="lp-verify" onClick={verify} disabled={busy}>
+                    <Button type="button" onClick={verify} disabled={busy}>
                       {busy ? "Hashing…" : digest ? "Hash it again" : "Hash this text"}
-                    </button>
+                    </Button>
                     <p className="lp-hint">
                       {failed
                         ? "This browser would not compute the digest. The chain check itself runs in Rust."
@@ -460,12 +472,12 @@ export function LandingPage() {
                   the job, from triage to governance.
                 </p>
                 <div className="lp-actions">
-                  <Link to="/triage" className="lp-button">
-                    Open the sample workspace
-                  </Link>
-                  <a className="lp-link" href="https://github.com/VasanthSaravanann/Ledger">
-                    Read the source
-                  </a>
+                  <Button asChild>
+                    <Link to="/triage">Open the sample workspace</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <a href="https://github.com/VasanthSaravanann/Ledger">Read the source</a>
+                  </Button>
                 </div>
                 <p className="lp-cta-note">
                   It is a preview; the ledger is the Rust command line tool, and it is what records

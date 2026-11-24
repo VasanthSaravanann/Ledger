@@ -323,7 +323,10 @@ workspace itself at `/triage`, `/import`, `/dispatch`, `/governance` and `/audit
 landing page carries real captures of those screens (`web/public/product/`), the
 fixture's own chain values in its diagram, and one live action: it hashes the sample
 record's text with WebCrypto.
-TanStack Start + React 19, built in [Lovable](https://lovable.dev) (project
+It shares the workspace's own system — one brand lockup (`brand-mark.tsx`), the same
+sans, the same 70px top bar, micro-labels, card radius and buttons — so the landing and
+the app read as one product. TanStack Start + React 19, built in
+[Lovable](https://lovable.dev) (project
 `f0481c24-dcfa-4ea5-9b31-1d0a285832ee`), deployed to Vercel as the project's
 production site (`ledger-pilot`, domain `ledger-pilot-chi.vercel.app`).
 

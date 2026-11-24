@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  Layers3,
   LayoutDashboard,
   Upload,
   Send,
@@ -18,6 +17,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLedger } from "./ledger-context";
+import { BrandMark } from "./brand-mark";
 const nav = [
   { to: "/triage", label: "Triage workspace", icon: LayoutDashboard },
   { to: "/import", label: "Import candidates", icon: Upload },
@@ -42,12 +42,7 @@ export function LedgerLayout({ children }: { children: ReactNode }) {
     <div className="app-shell">
       {open && <div className="drawer-backdrop md:hidden" onClick={() => setOpen(false)} />}
       <aside className={`sidebar ${open ? "mobile-open" : ""}`}>
-        <Link to="/" className="brand" title="Ledger">
-          <span className="brand-symbol">
-            <Layers3 size={21} />
-          </span>
-          ledger<span className="text-primary">.</span>
-        </Link>
+        <BrandMark />
         <div className="workspace-chip">
           <BriefcaseBusiness size={17} className="text-muted-foreground" />
           <div className="min-w-0 flex-1">

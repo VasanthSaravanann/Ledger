@@ -301,7 +301,14 @@ the useful part.
 23. **`web/` is a preview, not a ledger.** Session-only sample roster, no persistence,
     no signatures, no chain. Every screen says so. The next honest step is wiring it to
     the Rust core, not dressing the fixture up as evidence.
-24. **`ledger ui` is a loopback app, not a website.** It binds 127.0.0.1 behind the
+24. **One system, two surfaces.** `web/src/components/brand-mark.tsx` is the only brand
+    lockup; the workspace sidebar and the landing bar both render it, at the same 30px
+    tile and 24px word. Both surfaces share the sans stack, the 70px top bar with its
+    hairline, the uppercase 10px micro-label, the 7px card radius and the shadcn
+    `Button` set. The landing is bigger in scale (its h1 is 42px against the app's
+    27px) and keeps the hanging margin; it is not a different design language. If a
+    landing style and a workspace style disagree, the workspace wins.
+25. **`ledger ui` is a loopback app, not a website.** It binds 127.0.0.1 behind the
     `ui` feature, serves HTML from `include_str!` assets, and has no external asset,
     no CDN and no build step. That is the only HTTP surface the Rust code serves.
 24. **No CDN, no webfonts, system font stack** — air-gapped by construction, so the
