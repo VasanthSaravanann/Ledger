@@ -20,9 +20,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: vercel
+      - run: npm install -g vercel@latest
       # Vercel's build image has no Rust toolchain, so the pages are generated here
       # and shipped prebuilt. The drift check keeps the committed output honest.
       - run: ./scripts/build-site.sh

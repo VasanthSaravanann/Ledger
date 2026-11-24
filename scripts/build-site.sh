@@ -10,10 +10,18 @@ trap 'rm -rf "$work"' EXIT
 
 ./target/release/ledger demo seed --data "$work/pilot" --force --record
 
-# Provenance is derived from the commit, not the clock, so two runs of this script
-# on the same commit are byte-identical and the CI drift check stays meaningful.
-export LEDGER_BUILD_SHA="${LEDGER_BUILD_SHA:-$(git rev-parse --short HEAD 2>/dev/null || echo dev)}"
-export LEDGER_GENERATED_AT="${LEDGER_GENERATED_AT:-$(git log -1 --format=%cI 2>/dev/null || echo 1970-01-01T00:00:00Z)}"
+# Provenance is an *input*, not something read from HEAD: pages committed at commit
+# N would otherwise always regenerate as N+1 and the CI drift check could never
+# pass. `site/provenance.json` records the commit the pages were generated from;
+# bump it deliberately with LEDGER_BUMP_PROVENANCE=1 when the pages change.
+if [ "${LEDGER_BUMP_PROVENANCE:-0}" = "1" ] || [ ! -f site/provenance.json ]; then
+  build_sha="${LEDGER_BUILD_SHA:-$(git rev-parse --short HEAD 2>/dev/null || echo dev)}"
+  generated_at="${LEDGER_GENERATED_AT:-$(git log -1 --format=%cI 2>/dev/null || echo 1970-01-01T00:00:00Z)}"
+  printf '{\n  "build_sha": "%s",\n  "generated_at": "%s"\n}\n' \
+    "$build_sha" "$generated_at" > site/provenance.json
+fi
+export LEDGER_BUILD_SHA="${LEDGER_BUILD_SHA:-$(sed -n 's/.*"build_sha": "\([^"]*\)".*/\1/p' site/provenance.json)}"
+export LEDGER_GENERATED_AT="${LEDGER_GENERATED_AT:-$(sed -n 's/.*"generated_at": "\([^"]*\)".*/\1/p' site/provenance.json)}"
 
 # Capture the CLI surface for /cli, straight from the binary, before the export.
 {
