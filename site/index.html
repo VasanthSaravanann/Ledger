@@ -4,27 +4,40 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <title>Ledger — audit-grade candidate feedback pilot</title>
+    <title>Ledger — candidate feedback you can defend</title>
     <meta
       name="description"
-      content="Audit-grade candidate feedback pilot in Rust: a locked GATE/FIELD/ADMIN form with named decision makers and superseding corrections, versioned gate blocks, a linted role-level paragraph, second-person QA, an append-only hash-chained send log, and five pre-registered metrics."
+      content="Every rejection at initial screen, with a reason a human recorded, a signature that names them, and a hash-chained log that shows the text the candidate received. Runs offline."
     />
-    <meta property="og:title" content="Ledger — audit-grade candidate feedback pilot" />
+    <meta property="og:title" content="Ledger — candidate feedback you can defend" />
     <meta
       property="og:description"
-      content="Manually sent, machine-enforced: the pilot's constraints live in the code and in append-only logs."
+      content="Signed dispositions, pre-approved copy, an immutable send log. Open source, MIT, offline by design."
     />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Ledger" />
+    <meta property="og:url" content="https://ledger-pilot-chi.vercel.app/" />
+    <meta property="og:image" content="https://ledger-pilot-chi.vercel.app/og.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
     <style>
       :root {
         --bg: #fbfbfa;
         --fg: #17181a;
         --muted: #5f646b;
-        --line: #dcdcd7;
+        --line: #e2e4e8;
         --card: #ffffff;
+        --hover: #f6f7f9;
         --accent: #1a4fd6;
-        --code-bg: #f2f2ee;
+        --accent-wash: #eef3ff;
+        --pass: #1c6b3a;
+        --pass-wash: #eaf6ef;
         --warn: #8a5a00;
+        --warn-wash: #fef6e6;
+        --fail: #a51b1b;
+        --fail-wash: #fdeeee;
+        --ink: #101113;
+        --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -33,423 +46,381 @@
           --muted: #9aa0a6;
           --line: #2b2d31;
           --card: #17191c;
+          --hover: #1c1f23;
           --accent: #8fb0ff;
-          --code-bg: #1c1f23;
+          --accent-wash: #1a2340;
+          --pass: #7fd6a0;
+          --pass-wash: #13291c;
           --warn: #e0a44a;
+          --warn-wash: #2a2113;
+          --fail: #ff8a8a;
+          --fail-wash: #2a1414;
+          --ink: #e8e8e4;
         }
       }
-      * {
-        box-sizing: border-box;
-      }
-      html {
-        -webkit-text-size-adjust: 100%;
-      }
+      * { box-sizing: border-box; }
+      html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
       body {
         margin: 0;
         background: var(--bg);
         color: var(--fg);
-        font: 16px/1.65 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
-          sans-serif;
+        font: 16px/1.6 var(--sans);
+        font-variant-numeric: tabular-nums;
       }
-      .wrap {
-        max-width: 72ch;
-        margin: 0 auto;
-        padding: 3rem 1.25rem 4rem;
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      a:focus-visible, button:focus-visible, summary:focus-visible {
+        outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px;
       }
+      .shell { max-width: 1060px; margin: 0 auto; padding: 0 22px; }
+      header.site {
+        position: sticky; top: 0; z-index: 20;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--line);
+      }
+      header.site .row { display: flex; align-items: center; gap: 18px; height: 58px; }
+      .brand { font-weight: 700; letter-spacing: -.02em; font-size: 1.05rem; color: var(--fg); }
+      .brand span { color: var(--accent); }
+      header nav { display: flex; gap: 16px; margin-left: auto; font-size: .875rem; flex-wrap: wrap; }
+      header nav a { color: var(--muted); }
+      header nav a:hover { color: var(--fg); text-decoration: none; }
+      .btn {
+        display: inline-flex; align-items: center; gap: 8px; border-radius: 8px;
+        padding: 9px 16px; font: inherit; font-weight: 600; font-size: .9rem;
+        border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer;
+      }
+      .btn.secondary { background: transparent; color: var(--fg); border-color: var(--line); }
+      .btn.secondary:hover { border-color: var(--muted); text-decoration: none; }
       .banner {
-        display: inline-block;
-        margin: 0 0 1.25rem;
-        padding: 0.3rem 0.6rem;
-        border: 1px solid var(--warn);
-        border-radius: 6px;
-        color: var(--warn);
-        font-size: 0.8125rem;
+        display: block; text-align: center; font-size: .78rem; color: var(--warn);
+        background: var(--warn-wash); border-bottom: 1px solid var(--line); padding: 6px 12px;
       }
-      nav {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.35rem 1rem;
-        margin: 0 0 2rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 1px solid var(--line);
-        font-size: 0.875rem;
-      }
-      nav a {
-        color: var(--accent);
-        text-decoration: none;
-      }
+      .hero { padding: 64px 0 40px; display: grid; gap: 36px; grid-template-columns: 1.05fr .95fr; align-items: start; }
+      @media (max-width: 860px) { .hero { grid-template-columns: 1fr; padding-top: 40px; } }
       .eyebrow {
-        margin: 0 0 0.75rem;
-        font-size: 0.8125rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--muted);
+        margin: 0 0 14px; font-size: .78rem; letter-spacing: .09em; text-transform: uppercase;
+        color: var(--muted); font-weight: 600;
       }
-      h1 {
-        margin: 0 0 0.75rem;
-        font-size: clamp(1.9rem, 5vw, 2.6rem);
-        line-height: 1.15;
-        letter-spacing: -0.02em;
+      h1 { margin: 0 0 16px; font-size: clamp(2.1rem, 5vw, 3.1rem); line-height: 1.06; letter-spacing: -.03em; }
+      h1 em { font-style: normal; color: var(--accent); }
+      .sub { margin: 0 0 24px; font-size: 1.06rem; color: var(--muted); max-width: 46ch; }
+      .cta { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+      .fine { font-size: .8rem; color: var(--muted); margin: 0; }
+      .terminal {
+        background: var(--ink); color: #e6e7ea; border-radius: 12px; padding: 16px 18px;
+        font: .8rem/1.7 var(--mono); overflow-x: auto; border: 1px solid var(--line);
+        white-space: pre; box-shadow: 0 18px 40px rgb(0 0 0 / .16);
       }
-      .lede {
-        margin: 0 0 2.5rem;
-        font-size: 1.0625rem;
-        color: var(--muted);
-        max-width: 62ch;
+      .terminal b { color: #8fb0ff; font-weight: 500; }
+      .terminal i { color: #7fd6a0; font-style: normal; }
+      .proof {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 1px; background: var(--line); border: 1px solid var(--line);
+        border-radius: 12px; overflow: hidden; margin: 34px 0 0;
       }
-      h2 {
-        margin: 3rem 0 1rem;
-        font-size: 1.125rem;
-        letter-spacing: -0.01em;
-      }
-      h3 {
-        margin: 0 0 0.25rem;
-        font-size: 0.9375rem;
-      }
-      p {
-        margin: 0 0 1rem;
-      }
-      a {
-        color: var(--accent);
-      }
-      a:focus-visible,
-      summary:focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 3px;
-        border-radius: 2px;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-        gap: 0.875rem;
-        margin: 0;
-        padding: 0;
-        list-style: none;
-      }
+      .proof div { background: var(--card); padding: 14px 16px; }
+      .proof b { display: block; font-size: 1.35rem; letter-spacing: -.02em; }
+      .proof span { font-size: .78rem; color: var(--muted); }
+      section.block { padding: 56px 0; border-top: 1px solid var(--line); }
+      h2 { margin: 0 0 8px; font-size: clamp(1.35rem, 3vw, 1.75rem); letter-spacing: -.02em; }
+      .section-sub { margin: 0 0 26px; color: var(--muted); max-width: 62ch; }
+      .grid-3 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
       .card {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 1rem 1.125rem;
+        background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px;
       }
-      .card p {
-        margin: 0;
-        font-size: 0.875rem;
-        color: var(--muted);
+      .card h3 { margin: 0 0 6px; font-size: 1rem; }
+      .card p { margin: 0; font-size: .9rem; color: var(--muted); }
+      .card .num {
+        display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center;
+        border-radius: 50%; background: var(--accent-wash); color: var(--accent);
+        font: 700 .72rem/1 var(--mono); margin-bottom: 10px;
       }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.875rem;
+      .split { display: grid; gap: 22px; grid-template-columns: 1fr 1fr; }
+      @media (max-width: 820px) { .split { grid-template-columns: 1fr; } }
+      ul.checks { margin: 0; padding-left: 18px; font-size: .9rem; color: var(--muted); }
+      ul.checks li { margin-bottom: 8px; }
+      ul.checks b { color: var(--fg); font-weight: 600; }
+      table.docs { width: 100%; border-collapse: collapse; font-size: .875rem; }
+      table.docs th, table.docs td { text-align: left; padding: 10px 12px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+      table.docs th { color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .05em; }
+      .pillrow { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+      .pill {
+        font-size: .78rem; padding: 4px 10px; border-radius: 999px;
+        border: 1px solid var(--line); color: var(--muted); background: transparent;
       }
-      caption {
-        text-align: left;
-        padding-bottom: 0.5rem;
-        color: var(--muted);
-        font-size: 0.8125rem;
+      .pill.ok { color: var(--pass); background: var(--pass-wash); border-color: transparent; }
+      .pill.warn { color: var(--warn); background: var(--warn-wash); border-color: transparent; }
+      pre.code {
+        margin: 0; background: var(--hover); border: 1px solid var(--line); border-radius: 10px;
+        padding: 14px 16px; font: .82rem/1.65 var(--mono); overflow-x: auto; white-space: pre-wrap;
       }
-      th,
-      td {
-        text-align: left;
-        padding: 0.5rem 0.5rem 0.5rem 0;
-        border-bottom: 1px solid var(--line);
-        vertical-align: top;
-      }
-      th {
-        font-weight: 600;
-        color: var(--muted);
-        white-space: nowrap;
-      }
-      code,
-      pre {
-        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-        font-size: 0.8125rem;
-      }
-      :not(pre) > code {
-        background: var(--code-bg);
-        padding: 0.1em 0.35em;
-        border-radius: 4px;
-      }
-      pre {
-        margin: 0;
-        padding: 1rem 1.125rem;
-        background: var(--code-bg);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        overflow-x: auto;
-        line-height: 1.55;
-      }
-      ol.rules {
-        margin: 0;
-        padding-left: 1.25rem;
-      }
-      ol.rules li {
-        margin-bottom: 0.5rem;
-      }
-      footer {
-        margin-top: 3.5rem;
-        padding-top: 1.25rem;
-        border-top: 1px solid var(--line);
-        color: var(--muted);
-        font-size: 0.8125rem;
-      }
-      footer p {
-        margin: 0 0 0.4rem;
-      }
-      @media (prefers-reduced-motion: no-preference) {
-        a {
-          transition: color 120ms ease;
-        }
-      }
+      details { border-bottom: 1px solid var(--line); padding: 14px 0; }
+      details summary { cursor: pointer; font-weight: 600; font-size: .95rem; }
+      details p { margin: 10px 0 0; color: var(--muted); font-size: .9rem; }
+      footer.site { border-top: 1px solid var(--line); padding: 30px 0 44px; color: var(--muted); font-size: .82rem; }
+      footer.site .cols { display: flex; gap: 20px; flex-wrap: wrap; justify-content: space-between; }
+      .mono { font-family: var(--mono); font-size: .82rem; }
+      .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <p class="banner">Synthetic fixture — no pilot data yet</p>
-      <nav aria-label="Artefacts">
-        <a href="/emails">Candidate emails</a>
-        <a href="/gates">Gate library</a>
-        <a href="/audit">Hash-chain audit</a>
-        <a href="/comparative">Comparative paragraph</a>
-        <a href="/demo">Recorded run</a>
-        <a href="/ui">Recruiter workspace</a>
-        <a href="/format">Format spec</a>
-        <a href="/threat-model">Threat model</a>
-        <a href="/verify">Independent verifier</a>
-        <a href="/cli">CLI</a>
-      </nav>
+    <a class="sr" href="#main">Skip to content</a>
+    <p class="banner">Synthetic fixture — no pilot data on this site. Every number comes from a reproducible demo run.</p>
 
-      <p class="eyebrow">v2 pilot · one requisition · initial screen only</p>
-      <h1>Manually sent, machine-enforced.</h1>
-      <p class="lede">
-        <strong>Ledger</strong> is Rust tooling for the audit-grade candidate feedback pilot in
-        <code>V2.md</code>: 100% of rejected candidates on one high-volume requisition get a
-        human-recorded reason, with no ATS integration and no automated decision. Constraints are
-        enforced in code — validation, a copy lint, and append-only files — not by convention.
-        Every page below is generated at build time from the CLI's own output.
-      </p>
+    <header class="site">
+      <div class="shell row">
+        <a class="brand" href="/">Ledger<span>.</span></a>
+        <nav aria-label="Primary">
+          <a href="/lab">Try the rules</a>
+          <a href="/workspace">Workspace</a>
+          <a href="#install">Install</a>
+          <a href="/format">Docs</a>
+          <a href="https://github.com/VasanthSaravanann/Ledger">GitHub</a>
+        </nav>
+      </div>
+    </header>
 
-      <ul class="grid">
-        <li class="card">
-          <h3>Locked form</h3>
-          <p>
-            <code>GATE</code>, <code>FIELD</code>, <code>ADMIN</code> — nothing else. Named
-            decision maker, capture timestamp, corrections supersede rather than overwrite.
+    <main id="main">
+      <div class="shell">
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Open source · MIT · runs offline</p>
+            <h1>Rejection feedback you can <em>defend</em>.</h1>
+            <p class="sub">
+              150 applicants, one requisition, every rejection at initial screen. Each one gets a
+              reason a named human recorded, copy that Legal signed, and an entry in a log that
+              proves the exact words the candidate received.
+            </p>
+            <div class="cta">
+              <a class="btn" href="/lab">Try the rules in your browser</a>
+              <a class="btn secondary" href="/workspace">Open the workspace</a>
+            </div>
+            <p class="fine">
+              No sign-up. The lab re-hashes the send log with your own browser's crypto —
+              nothing there asks you to trust it.
+            </p>
+          </div>
+
+          <div class="terminal" role="img" aria-label="Terminal output of a demo seed">
+<b>$</b> ledger demo seed --data pilot --force
+synthetic fixture — no pilot data yet
+requisition:        REQ-2026-014
+roster rows:        150
+dropped at import:  1
+dispositions:       GATE 12, FIELD 129, ADMIN 8, missing 1
+emails committed:   147
+blocked:            3
+  - answer-mismatch:GATE-02
+  - awaiting-qa:random-ten-percent
+  - missing-disposition
+stale versions:     1
+
+<b>$</b> ledger verify-signatures --data pilot
+gate-library                     valid
+template-gate                    valid
+template-field                   valid
+template-admin                   valid
+playbook                         valid
+requisition-REQ-2026-014         valid
+comparative-REQ-2026-014         valid
+<i>exit 0</i>
+          </div>
+        </section>
+
+        <div class="proof">
+          <div><b>5</b><span>versioned gate blocks</span></div>
+          <div><b>3</b><span>master templates</span></div>
+          <div><b>3</b><span>circuit-breakers</span></div>
+          <div><b>5</b><span>pre-registered metrics</span></div>
+          <div><b>147</b><span>fixture sends chained</span></div>
+          <div><b>0</b><span>outbound network calls</span></div>
+        </div>
+      </div>
+
+      <section class="block" id="how">
+        <div class="shell">
+          <h2>Three steps, and each one can refuse</h2>
+          <p class="section-sub">
+            The pilot's constraints are not a policy document. They are validation that rejects a
+            bad row, a lint that rejects bad copy, and files that cannot be quietly rewritten.
           </p>
-        </li>
-        <li class="card">
-          <h3>Versioned copy</h3>
-          <p>
-            Five gate blocks with <code>TEXT_VERSION</code>. A gate without documented requisition
-            facts cannot be captured; the row must be recorded as <code>FIELD</code>.
+          <div class="grid-3">
+            <article class="card">
+              <span class="num">1</span>
+              <h3>Capture a reason</h3>
+              <p>
+                <code>GATE</code>, <code>FIELD</code> or <code>ADMIN</code> — nothing else. No free
+                text, no “Other”. A named decision maker, a timestamp, and an Ed25519 signature.
+                Corrections supersede; they never overwrite.
+              </p>
+            </article>
+            <article class="card">
+              <span class="num">2</span>
+              <h3>Gate the send</h3>
+              <p>
+                No disposition, no email. A gate answer that contradicts the candidate's own ATS
+                answer blocks and escalates — it is never auto-corrected. A <code>GATE</code> email
+                also needs a second-person QA check.
+              </p>
+            </article>
+            <article class="card">
+              <span class="num">3</span>
+              <h3>Prove what was sent</h3>
+              <p>
+                Every send is one line, chained by SHA-256 to the line before it, holding the exact
+                rendered body. Edit one byte and the log refuses to load — and refuses to grow.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="shell split">
+          <div>
+            <h2>For the people who get asked afterwards</h2>
+            <p class="section-sub">Three audiences, three surfaces, one source of truth.</p>
+            <ul class="checks">
+              <li><b>HR and Legal</b> read the three emails as candidates receive them, and see the
+                four drafts the copy linter refused.</li>
+              <li><b>Recruiters</b> work the triage queue: pending, <code>GATE</code>,
+                <code>FIELD</code>, <code>ADMIN</code>, with a live preview before anything is
+                committed.</li>
+              <li><b>Auditors</b> verify the chain, the signatures, and the operator activity
+                without write access.</li>
+            </ul>
+          </div>
+          <div>
+            <h2>And what it refuses to do</h2>
+            <p class="section-sub">Stated plainly, because the omissions are the design.</p>
+            <ul class="checks">
+              <li>No LLM in the send path. A person selects; the system renders.</li>
+              <li>No email sending. It renders the draft, records it as <code>queued</code>, and
+                leaves delivery to your mail client.</li>
+              <li>No ATS API. One CSV in, one draft batch out.</li>
+              <li>No hosted service. The workspace is a directory your team holds.</li>
+              <li>No Windows binary. macOS and Linux only, tested.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="block" id="install">
+        <div class="shell">
+          <h2>Install and run it</h2>
+          <p class="section-sub">
+            Rust 1.85+. There is no published release yet, so build from source; the demo fixture
+            needs no employer data.
           </p>
-        </li>
-        <li class="card">
-          <h3>Immutable log</h3>
-          <p>
-            Every send stores the full body and its hash, chained to the previous line. One altered
-            byte makes <code>log verify</code> refuse the file.
+          <div class="split">
+            <div>
+              <pre class="code">git clone https://github.com/VasanthSaravanann/Ledger
+cd Ledger
+cargo build --release
+
+# deterministic fixture: 150 applicants, 147 sends, 3 blocks
+./target/release/ledger demo seed --data pilot --force --record
+./target/release/ledger log verify --data pilot
+./verify_log.py pilot/send_log.jsonl   # stdlib-only, independent</pre>
+            </div>
+            <div>
+              <div class="pillrow">
+                <span class="pill ok">tests 136</span>
+                <span class="pill ok">clippy -D warnings</span>
+                <span class="pill ok">MSRV 1.85 verified</span>
+                <span class="pill ok">zero network crates</span>
+                <span class="pill warn">Windows unsupported</span>
+              </div>
+              <p class="section-sub" style="margin-bottom: 12px">
+                The recruiter workspace is an optional feature, so the default build stays a CLI:
+              </p>
+              <pre class="code">cargo build --release --features ui
+ledger --data pilot --operator rec-rui ui --port 8420
+# http://127.0.0.1:8420/?token=&lt;one-time&gt;</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="shell">
+          <h2>Read the evidence, not the marketing</h2>
+          <p class="section-sub">
+            Every page below is generated at build time from a real CLI run. Each carries the commit
+            it was generated from and the fixture fingerprint.
           </p>
-        </li>
-      </ul>
+          <table class="docs">
+            <thead>
+              <tr><th scope="col">Page</th><th scope="col">What you can check</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><a href="/emails">/emails</a></td><td>Template A, B and C exactly as a candidate receives them.</td></tr>
+              <tr><td><a href="/gates">/gates</a></td><td>The five blocks, their versions, and why a gate without documented facts is unavailable.</td></tr>
+              <tr><td><a href="/audit">/audit</a></td><td>A valid chain beside one with a single byte changed.</td></tr>
+              <tr><td><a href="/comparative">/comparative</a></td><td>The four elicitation questions, the approved paragraph, and the drafts the linter rejected.</td></tr>
+              <tr><td><a href="/format">/format</a></td><td>The normative byte format: canonical JSON, digest coverage, chain rules.</td></tr>
+              <tr><td><a href="/threat-model">/threat-model</a></td><td>What the chain proves, what it cannot, and the anchoring it needs.</td></tr>
+              <tr><td><a href="/verify">/verify</a></td><td>The independent verifier's source: standard library only.</td></tr>
+              <tr><td><a href="/cli">/cli</a></td><td>The CLI surface captured from the binary, with exit codes.</td></tr>
+              <tr><td><a href="/ui">/ui</a></td><td>The workspace: routes, roles, session, lock discipline.</td></tr>
+              <tr><td><a href="/demo">/demo</a></td><td>A scripted terminal run, including the tamper check.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-      <h2>Review the artefacts</h2>
-      <table>
-        <caption>Generated from <code>ledger dispatch --preview --export-html</code>. Synthetic fixture.</caption>
-        <thead>
-          <tr>
-            <th scope="col">Page</th>
-            <th scope="col">What HR and Legal can check</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><a href="/emails">/emails</a></td>
-            <td>
-              The three emails exactly as a candidate receives them: named sender, monitored
-              reply-to, the requirement named, and the fixed paragraph declining individual
-              feedback.
-            </td>
-          </tr>
-          <tr>
-            <td><a href="/gates">/gates</a></td>
-            <td>
-              All five blocks with versions, the candidate-facing copy, and why
-              <code>GATE-02</code>–<code>05</code> are unavailable without documented facts.
-            </td>
-          </tr>
-          <tr>
-            <td><a href="/audit">/audit</a></td>
-            <td>
-              A valid chain next to the same log with one byte changed, so the tamper diagnosis is
-              visible rather than asserted.
-            </td>
-          </tr>
-          <tr>
-            <td><a href="/comparative">/comparative</a></td>
-            <td>
-              The four elicitation questions, the approved paragraph, and three drafts the linter
-              rejected, with the exact rule that fired.
-            </td>
-          </tr>
-          <tr>
-            <td><a href="/format">/format</a> · <a href="/threat-model">/threat-model</a> · <a href="/verify">/verify</a> · <a href="/cli">/cli</a></td>
-            <td>
-              The normative byte format, the threat model, the stdlib-only verifier's
-              source, and the CLI surface captured from the binary at build time.
-            </td>
-          </tr>
-          <tr>
-            <td><a href="/ui">/ui</a></td>
-            <td>
-              The local recruiter workspace: triage, signed disposition capture, governance
-              verdicts and the audit feed — behind the optional <code>ui</code> feature, bound
-              to <code>127.0.0.1</code>.
-            </td>
-          </tr>
-          <tr>
-            <td><a href="/demo">/demo</a></td>
-            <td>
-              A scripted terminal run: 3 blocked of 150, one row dropped at import, then verify
-              PASS → one byte changed → FAIL.
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <section class="block">
+        <div class="shell">
+          <h2>Questions people actually ask</h2>
+          <details>
+            <summary>Is this an AI tool?</summary>
+            <p>
+              No. There is no model in the send path: a human selects one of three reasons, and the
+              system renders pre-approved text. The pilot exists to find out whether that manual
+              pipeline is affordable — the five metrics decide whether v2 gets any automation.
+            </p>
+          </details>
+          <details>
+            <summary>Where does the candidate data live?</summary>
+            <p>
+              In a directory you choose, with the directory at <code>0700</code> and every state file
+              at <code>0600</code>. There is no server to leak. The workspace ships with a
+              deterministic synthetic fixture so you can try it without touching real applicants.
+            </p>
+          </details>
+          <details>
+            <summary>What stops someone rewriting the log?</summary>
+            <p>
+              Nothing local. The chain proves internal consistency, not provenance: with write
+              access you can fabricate a consistent log. <a href="/threat-model">The threat model</a>
+              says so, and the control is to publish the head hash off-host — <code>ledger anchor</code>
+              writes a receipt you copy elsewhere.
+            </p>
+          </details>
+          <details>
+            <summary>Can I use it for my own requisition?</summary>
+            <p>
+              That is the intent, but read <a href="/format">the format spec</a> and the
+              <a href="/threat-model">threat model</a> first, and have your legal counsel confirm
+              the privacy position for your jurisdiction. The tool records sign-off; it cannot give
+              you one.
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
 
-      <h2>Who can do what</h2>
-      <p class="lede" style="margin-bottom: 1rem">
-        Every operator is an Ed25519 keypair and every disposition is signed by the
-        key that authorised it. The chain proves the log is unedited; the signatures
-        prove who decided what.
-      </p>
-      <table>
-        <caption>Synthetic fixture — five registered operators.</caption>
-        <thead>
-          <tr>
-            <th scope="col">Role</th>
-            <th scope="col">May run</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>coordinator</code></td>
-            <td>import, dispose, QA, dispatch, reply, signal, anchor</td>
-          </tr>
-          <tr>
-            <td><code>approver</code></td>
-            <td>sign off copy, governance, purge, migrate, register operators</td>
-          </tr>
-          <tr>
-            <td><code>auditor</code></td>
-            <td>read-only: verify, metrics, find, verify-signatures</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <h2>Run it</h2>
-      <p class="lede" style="margin-bottom: 1rem">
-        One sequence, copy-pasteable. Every approval below is collected from both the Hiring
-        Manager and Legal, because a single-pass sign-off needs both.
-      </p>
-      <pre><code>cargo build --release
-
-ledger init --data pilot
-ledger governance set --data pilot --escalation-owner "M. Okafor, Employee Relations"
-
-for role in hiring-manager legal; do
-  ledger gate approve      --data pilot --actor "J. Chen"   --role $role
-  ledger templates approve --data pilot --actor "M. Okafor" --role $role
-  ledger playbook approve  --data pilot --actor "M. Okafor" --role $role
-done
-
-ledger requisition create --data pilot --id REQ-2026-014 \
-  --employer "Example Health" --title "Registered Nurse" \
-  --reply-to careers-feedback@example.com.au \
-  --sender-name "R. Patel" --sender-title "Recruitment Coordinator" \
-  --gate right-to-work --gate work-rights-duration \
-  --fact ROLE_END_OR_MIN_TERM="30 June 2027" \
-  --fact MIN_TERM="12 months" \
-  --fact ROLE_DURATION_REASON="The appointment is a fixed-term 12-month contract."
-
-ledger requisition comparative --data pilot --id REQ-2026-014 \
-  --attribute-1 "assessment of deteriorating patients" \
-  --attribute-2 "escalation to a registrar within their first hour" \
-  --attribute-3 "documentation a covering clinician could act on" \
-  --evidence "a de-identified case note attached to the application" \
-  --non-factors "a post-graduate qualification or a specific employer"
-
-for role in hiring-manager legal; do
-  ledger requisition approve --data pilot --id REQ-2026-014 --actor "J. Chen" --role $role
-  ledger requisition approve --data pilot --id REQ-2026-014 --actor "M. Okafor" \
-    --role $role --comparative
-done
-
-ledger ats import --data pilot --requisition REQ-2026-014 --file export.csv
-
-ledger disposition record --data pilot --requisition REQ-2026-014 \
-  --application APP-1001 --first-name Ada --email ada@example.com \
-  --recruiter rec-rui --decision-maker dm-chen \
-  --category GATE --gate right-to-work --answer not-held
-
-ledger dispatch --data pilot --requisition REQ-2026-014 --preview
-ledger qa record --data pilot --requisition REQ-2026-014 --application APP-1001 --qa qa-patel
-ledger dispatch --data pilot --requisition REQ-2026-014
-
-ledger log verify --data pilot
-ledger log export --data pilot --requisition REQ-2026-014 --out send-log.csv
-ledger metrics --data pilot --requisition REQ-2026-014
-
-# Or skip the setup entirely and use the deterministic fixture:
-ledger demo seed --data pilot --force</code></pre>
-
-      <h2>Metrics and routing</h2>
-      <table>
-        <caption>Synthetic fixture thresholds, pre-registered. The routing reads them; it does not score them.</caption>
-        <thead>
-          <tr>
-            <th scope="col">Metric</th>
-            <th scope="col">Green</th>
-            <th scope="col">Amber</th>
-            <th scope="col">Red</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td>Reply volume</td><td>&lt; 30 / 1k</td><td>30–80</td><td>&gt; 80</td></tr>
-          <tr><td>Form-block rate</td><td>&lt; 10%</td><td>10–25%</td><td>&gt; 25%</td></tr>
-          <tr><td>Gate-mismatch rate</td><td>&lt; 2%</td><td>2–10%</td><td>&gt; 10%</td></tr>
-          <tr><td>Criteria feasibility</td><td>yes, 1 session</td><td>yes, external input</td><td>no</td></tr>
-          <tr><td>Candidate-value signal</td><td>&gt; 50% yes</td><td>30–50%</td><td>&lt; 30%</td></tr>
-        </tbody>
-      </table>
-
-      <h2>The routing rule</h2>
-      <ol class="rules">
-        <li>Candidate-value red → <strong>stop</strong>. Do not build v2.</li>
-        <li>Gate-mismatch red → <strong>flag live discrimination exposure</strong> immediately.</li>
-        <li>Form-block red → <strong>capture-discipline middleware</strong> is the v2 signal.</li>
-        <li>Form-block green + criteria yes → <strong>reassess venture viability</strong>.</li>
-        <li>Reply volume red → <strong>scope automated reply triage</strong> into v2.</li>
-        <li>Criteria no → <strong>pivot to criteria-validation tooling</strong>.</li>
-      </ol>
-
-      <footer>
-        <p>
-          The tool renders the exact text, applies the three circuit-breakers, and records the send.
-          It never sends email and never calls the ATS — per the pilot's scope, dispatch stays
-          manual.
-        </p>
-        <p>
-          Retention, migration and chain-head anchoring are CLI commands
-          (<code>ledger purge</code>, <code>ledger migrate</code>,
-          <code>ledger anchor</code>); the workspace is <code>0700</code> and every
-          state file <code>0600</code>.
-        </p>
-        <p>
-          Synthetic fixture — no pilot data yet. Source:
+    <footer class="site">
+      <div class="shell cols">
+        <p style="margin: 0">
           <a href="https://github.com/VasanthSaravanann/Ledger">github.com/VasanthSaravanann/Ledger</a>
+          · MIT · synthetic fixture, no pilot data
         </p>
-      </footer>
-    </div>
+        <p style="margin: 0">
+          Build provenance on every generated page — see <a href="/audit">/audit</a>.
+        </p>
+      </div>
+    </footer>
   </body>
 </html>

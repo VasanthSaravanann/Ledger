@@ -51,13 +51,14 @@ pub struct ExportReport {
 }
 
 /// The page routes, in navigation order.
-pub const ROUTES: [(&str, &str); 8] = [
+pub const ROUTES: [(&str, &str); 9] = [
     ("emails", "Candidate emails"),
     ("gates", "Gate library"),
     ("audit", "Hash-chain audit"),
     ("comparative", "Comparative paragraph"),
     ("demo", "Recorded run"),
     ("ui", "Recruiter workspace"),
+    ("lab", "Try the rules"),
     ("format", "Format spec"),
     ("threat-model", "Threat model"),
 ];
@@ -175,6 +176,13 @@ pub fn export_html(store: &Store, out_dir: impl AsRef<Path>) -> Result<ExportRep
     })?;
     pages.push(demo);
 
+    let lab = out_dir.join("lab.html");
+    fs::write(&lab, lab_page(store)?).map_err(|source| Error::Io {
+        path: lab.clone(),
+        source,
+    })?;
+    pages.push(lab);
+
     let workspace = out_dir.join("ui.html");
     fs::write(&workspace, ui_page()).map_err(|source| Error::Io {
         path: workspace.clone(),
@@ -265,6 +273,9 @@ fn sitemap() -> String {
         "comparative",
         "demo",
         "ui",
+        "lab",
+        "workspace",
+        "workspace-governance",
         "format",
         "threat-model",
         "verify",
@@ -332,6 +343,285 @@ fn verifier_page() -> Result<String> {
     ))
 }
 
+/// Builds the interactive lab page: gate rules, template rendering, and a chain
+/// that the browser re-hashes itself.
+///
+/// The data is produced here, by the same Rust code that dispatches the pilot.
+/// The page's JavaScript only *renders and re-hashes*: it holds no rule.
+pub fn lab_page(store: &Store) -> Result<String> {
+    let requisition_id = RequisitionId::try_from(crate::demo::PILOT_REQUISITION)?;
+    let book = crate::requisition::RequisitionBook::load(store)?;
+    let requisition = book.require(&requisition_id)?;
+    let library: crate::gate::GateLibrary = store
+        .load(crate::store::GATE_LIBRARY)?
+        .ok_or_else(|| not_seeded("gate library"))?;
+    let templates: Templates = store
+        .load(crate::store::TEMPLATES)?
+        .ok_or_else(|| not_seeded("templates"))?;
+    let dispositions = Dispositions::open(store)?;
+    let sends = crate::log::SendLog::open(store)?.entries()?;
+
+    let mut gates = Vec::new();
+    for gate in crate::gate::GateKind::ALL {
+        let copy = library.require(gate)?;
+        let rendered = copy.render(&requisition.facts)?;
+        gates.push(serde_json::json!({
+            "code": gate.code(),
+            "slug": gate.slug(),
+            "label": gate.label(),
+            "version": copy.version.as_str(),
+            "requirement": rendered.requirement,
+            "satisfies": rendered.satisfies,
+            "flexibility": rendered.flexibility,
+            "answers": gate.allowed_answers().iter().map(|answer| {
+                serde_json::json!({ "code": answer.code(), "phrase": answer.phrase() })
+            }).collect::<Vec<_>>(),
+            "facts": gate.required_facts().iter().map(|fact| {
+                serde_json::json!({
+                    "key": fact.to_string(),
+                    "value": requisition.facts.get(fact).cloned().unwrap_or_default(),
+                })
+            }).collect::<Vec<_>>(),
+        }));
+    }
+
+    // One rendered email per template, from real fixture dispositions.
+    let mut emails = Vec::new();
+    for kind in TemplateKind::ALL {
+        let Some(record) = dispositions.records().iter().find(|record| {
+            record.form.requisition == requisition_id
+                && record.form.disposition.kind().template_kind() == kind
+        }) else {
+            continue;
+        };
+        let gate_text = match &record.form.disposition {
+            crate::disposition::Disposition::Gate { gate, .. } => {
+                Some(library.require(*gate)?.render(&requisition.facts)?)
+            }
+            _ => None,
+        };
+        let rendered = render(
+            templates.require(kind)?,
+            &MergeContext {
+                candidate_first_name: &record.form.candidate_first_name,
+                requisition,
+                disposition: &record.form.disposition,
+                gate_text: gate_text.as_ref(),
+            },
+        )?;
+        emails.push(serde_json::json!({
+            "kind": kind.code(),
+            "letter": kind.letter(),
+            "subject": rendered.subject,
+            "body": rendered.body,
+        }));
+    }
+
+    // The three oldest sends, with the exact canonical bytes their hash covers.
+    let chain: Vec<serde_json::Value> = sends
+        .iter()
+        .take(3)
+        .map(|entry| {
+            serde_json::json!({
+                "seq": entry.seq,
+                "send_id": entry.send_id.as_str(),
+                "application_id": entry.application_id.as_str(),
+                "prev_hash": entry.prev_hash,
+                "entry_hash": entry.entry_hash,
+                "payload": entry.canonical_payload(),
+                "body_digest": entry.text_digest,
+            })
+        })
+        .collect();
+
+    let data = serde_json::json!({
+        "requisition": requisition_id.as_str(),
+        "role": requisition.title,
+        "employer": requisition.employer,
+        "comparative": requisition.comparative.as_ref().map(|p| serde_json::json!({
+            "version": p.version.as_str(),
+            "text": p.text(),
+        })),
+        "gates": gates,
+        "emails": emails,
+        "chain": chain,
+    });
+
+    // Built by concatenation, not `format!`: the inline JavaScript is full of
+    // braces, and doubling every one of them would be a trap for the next edit.
+    let body = [
+        LAB_HTML,
+        &data.to_string(),
+        "</script><script>",
+        LAB_JS,
+        "</script>",
+    ]
+    .concat();
+    Ok(shell("Try the rules", "lab", &body))
+}
+
+const LAB_HTML: &str = r#"<h1>Try the rules</h1>
+<p class="lede">Every value on this page was produced by the Rust code that runs the pilot. The
+JavaScript below only renders it — and separately re-hashes the chain with your browser's own
+<code>crypto.subtle</code>, so nothing here asks you to trust the page.</p>
+
+<h2>1. Gate rules</h2>
+<div class="grid">
+  <section class="card">
+    <h3>Pick a gate and the candidate's answer</h3>
+    <p class="meta" id="gate-label"></p>
+    <label class="field">Gate <select id="gate-select"></select></label>
+    <label class="field">Candidate's answer <select id="answer-select"></select></label>
+    <p id="gate-verdict" class="verdict"></p>
+    <pre id="gate-text"></pre>
+  </section>
+  <section class="card">
+    <h3>Why a gate can be unavailable</h3>
+    <p class="meta">These are the requisition facts the block needs before the requisition may post.
+    Missing facts make the gate unavailable, and the form must fall back to <code>FIELD</code>.</p>
+    <table><thead><tr><th>Fact</th><th>Documented value</th></tr></thead>
+    <tbody id="fact-rows"></tbody></table>
+  </section>
+</div>
+
+<h2>2. What the candidate receives</h2>
+<div class="grid">
+  <section class="card">
+    <h3>Template</h3>
+    <div id="email-buttons" class="row"></div>
+    <p class="meta" id="email-meta"></p>
+  </section>
+  <section class="card">
+    <h3 id="email-subject"></h3>
+    <pre id="email-body"></pre>
+  </section>
+</div>
+
+<h2>3. Verify the chain yourself</h2>
+<p class="meta">Each entry's SHA-256 is computed in this browser over the canonical bytes shown.
+Press <em>Tamper</em> and the digest of that entry stops matching its recorded hash.</p>
+<section class="card">
+  <div class="row">
+    <button class="primary" id="verify">Recompute all three</button>
+    <button class="ghost" id="tamper">Tamper with entry 1</button>
+  </div>
+  <table><thead><tr><th>Seq</th><th>Send</th><th>Application</th><th>Recorded hash</th>
+  <th>Recomputed in your browser</th></tr></thead><tbody id="chain-rows"></tbody></table>
+</section>
+<script id="lab-data" type="application/json">"#;
+
+const LAB_JS: &str = r#"<script>
+(() => {
+  const data = JSON.parse(document.getElementById("lab-data").textContent);
+  const gateSelect = document.getElementById("gate-select");
+  const answerSelect = document.getElementById("answer-select");
+  const verdict = document.getElementById("gate-verdict");
+  const gateText = document.getElementById("gate-text");
+  const gateLabel = document.getElementById("gate-label");
+  const factRows = document.getElementById("fact-rows");
+
+  const allAnswers = data.gates.flatMap((gate) => gate.answers);
+  data.gates.forEach((gate, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `${gate.code} — ${gate.label} (${gate.version})`;
+    gateSelect.append(option);
+  });
+
+  const renderGate = () => {
+    const gate = data.gates[Number(gateSelect.value)];
+    gateLabel.textContent = `${data.requisition} · ${data.role} · ${data.employer}`;
+    answerSelect.textContent = "";
+    allAnswers.forEach((answer) => {
+      const option = document.createElement("option");
+      option.value = answer.code;
+      option.textContent = `${answer.code} — ${answer.phrase}`;
+      if (gate.answers.some((allowed) => allowed.code === answer.code)) {
+        option.dataset.allowed = "true";
+      }
+      answerSelect.append(option);
+    });
+    const allowed = gate.answers.some((answer) => answer.code === answerSelect.value);
+    verdict.textContent = allowed
+      ? `Allowed: ${gate.code} offers this answer, so a GATE disposition may be recorded.`
+      : `Blocked: ${gate.code} does not offer this answer. The form rejects it (DisallowedAnswer) before anything is written.`;
+    verdict.className = `verdict ${allowed ? "ok" : "bad"}`;
+    gateText.textContent = `${gate.requirement}\n\nWhat satisfies it: ${gate.satisfies}\n\n${gate.flexibility}`;
+    factRows.textContent = "";
+    gate.facts.forEach((fact) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `<td class="mono">${fact.key}</td><td>${fact.value || "MISSING"}</td>`;
+      factRows.append(row);
+    });
+  };
+  gateSelect.addEventListener("change", renderGate);
+  answerSelect.addEventListener("change", renderGate);
+  renderGate();
+
+  const emailButtons = document.getElementById("email-buttons");
+  const emailSubject = document.getElementById("email-subject");
+  const emailBody = document.getElementById("email-body");
+  const emailMeta = document.getElementById("email-meta");
+  const renderEmail = (index) => {
+    const email = data.emails[index];
+    emailSubject.textContent = email.subject;
+    emailBody.textContent = email.body;
+    emailMeta.textContent = `Template ${email.letter} · ${email.kind} · rendered from the fixture`;
+  };
+  data.emails.forEach((email, index) => {
+    const button = document.createElement("button");
+    button.className = "pill";
+    button.textContent = `Template ${email.letter}`;
+    button.addEventListener("click", () => {
+      emailButtons.querySelectorAll("button").forEach((other) => other.setAttribute("aria-pressed", "false"));
+      button.setAttribute("aria-pressed", "true");
+      renderEmail(index);
+    });
+    emailButtons.append(button);
+  });
+  if (data.emails.length) {
+    emailButtons.querySelector("button")?.setAttribute("aria-pressed", "true");
+    renderEmail(0);
+  }
+
+  const toHex = (buffer) =>
+    Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const digest = async (text) =>
+    toHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+
+  const rows = document.getElementById("chain-rows");
+  const entries = data.chain.map((entry) => ({ ...entry, current: entry.payload }));
+  const renderChain = async () => {
+    rows.textContent = "";
+    for (const entry of entries) {
+      const computed = await digest(entry.current);
+      const matches = computed === entry.entry_hash;
+      const row = document.createElement("tr");
+      row.innerHTML =
+        `<td class="mono">${entry.seq}</td><td class="mono">${entry.send_id}</td>` +
+        `<td class="mono">${entry.application_id}</td>` +
+        `<td class="mono">${entry.entry_hash.slice(0, 16)}…</td>` +
+        `<td class="mono ${matches ? "ok" : "bad"}">${matches ? "match" : "MISMATCH"}</td>`;
+      rows.append(row);
+    }
+  };
+  document.getElementById("verify").addEventListener("click", renderChain);
+  document.getElementById("tamper").addEventListener("click", () => {
+    if (entries[0]) {
+      const original = entries[0].current;
+      entries[0].current = original.includes("Ada")
+        ? original.replace("Ada", "Eve")
+        : original.replace('"body":"', '"body":"tampered ');
+      if (entries[0].current === original) {
+        entries[0].current = original.slice(0, 20) + "x" + original.slice(21);
+      }
+    }
+    renderChain();
+  });
+  renderChain();
+})();
+</script>"#;
+
 /// The recruiter workspace page. Hand-written copy: the server's own output is a
 /// live session, not a build artefact, so there is nothing for the generator to
 /// capture beyond this description.
@@ -382,7 +672,10 @@ ledger --data pilot --operator rec-rui ui --port 8420\n\
          </ul>\
          <p class=\"lede\">Everything above is an honest list: the workspace covers triage, \
          capture and audit; the remaining screens reuse handlers that already exist in the \
-         CLI.</p>";
+         CLI.</p>\
+         <p class=\"lede\">See it without running it: <a href=\"/workspace\">triage snapshot</a> \
+         and <a href=\"/workspace-governance\">governance snapshot</a>, captured from a live \
+         server run against the fixture at build time.</p>";
     shell("Recruiter workspace", "ui", body)
 }
 

@@ -315,9 +315,12 @@ enforced on creation regardless of the process umask. `tests/` asserts this.
 
 ### Site pages
 
-`/`, `/emails`, `/gates`, `/audit`, `/comparative`, `/demo`, `/format`,
-`/threat-model`, `/verify` and `/cli`, plus `404.html`, `robots.txt` and
-`sitemap.xml`. Every generated page carries build provenance: commit SHA, the
+`/` (product landing), `/lab` (interactive: gate rules, rendered emails, and a chain
+re-hashed in the browser with `crypto.subtle`), `/workspace` and
+`/workspace-governance` (snapshots of the real `ledger ui` screens, captured from a
+live server run at build time), `/emails`, `/gates`, `/audit`, `/comparative`,
+`/demo`, `/ui`, `/format`, `/threat-model`, `/verify` and `/cli`, plus
+`404.html`, `robots.txt` and `sitemap.xml`. Every generated page carries build provenance: commit SHA, the
 commit timestamp used as generation time, and the fixture fingerprint. Two runs of
 `scripts/build-site.sh` on one commit are byte-identical, which is what makes the
 CI drift check meaningful.

@@ -249,6 +249,14 @@ impl SendEntry {
         ])
     }
 
+    /// The exact canonical bytes this entry's hash is taken over.
+    ///
+    /// Exposed so an independent verifier — including a browser using WebCrypto —
+    /// can recompute the digest without trusting this binary.
+    pub fn canonical_payload(&self) -> String {
+        String::from_utf8(canonical_bytes(&self.payload())).unwrap_or_default()
+    }
+
     /// Recomputes this entry's chain hash from the canonical payload.
     fn compute_hash(&self) -> String {
         sha256_hex(&canonical_bytes(&self.payload()))
