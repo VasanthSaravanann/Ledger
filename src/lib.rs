@@ -7,11 +7,17 @@
 //! - [`requisition`] holds the static comparative paragraph and its sign-off.
 //! - [`disposition`] is the locked, timestamped, no-free-text disposition form.
 //! - [`template`] holds the three master merge templates.
-//! - [`ats`] maps the ATS export onto dispositions by application id.
+//! - [`playbook`] holds the five canned reply scripts and their escalation.
+//! - [`ats`] maps the ATS export onto dispositions by application id, with the
+//!   hard initial-screen filter.
+//! - [`disposition`] also carries corrections: a new record `SUPERSEDES` the old.
+//! - [`qa`] records the second-person check and draws the deterministic 10% sample.
 //! - [`log`] is the append-only, hash-chained send log and the blocked log.
 //! - [`pipeline`] is the gate-blocking protocol that refuses to send without a
-//!   completed disposition.
-//! - [`metrics`] and [`review`] are the three decision metrics and the go/no-go.
+//!   completed disposition, a matching answer, and a recorded QA check.
+//! - [`metrics`] and [`review`] are the five pre-registered metrics and the v2
+//!   routing decision.
+//! - [`policy`] records retention and the escalation owner.
 //! - [`checklist`] tracks the operational tasks that a person, not a program,
 //!   has to sign off.
 
@@ -27,6 +33,9 @@ pub mod jsonl;
 pub mod log;
 pub mod metrics;
 pub mod pipeline;
+pub mod playbook;
+pub mod policy;
+pub mod qa;
 pub mod requisition;
 pub mod review;
 pub mod store;

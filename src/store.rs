@@ -27,6 +27,12 @@ pub const SEND_LOG: &str = "send_log.jsonl";
 pub const BLOCKED_LOG: &str = "blocked.jsonl";
 /// Append-only log of candidate replies.
 pub const REPLIES: &str = "replies.jsonl";
+/// Append-only log of dispositions captured through the form.
+pub const QA_LOG: &str = "qa.jsonl";
+/// Append-only log of candidate-value signals.
+pub const SIGNALS: &str = "signals.jsonl";
+/// File holding the five reply-playbook scripts.
+pub const PLAYBOOK: &str = "playbook.json";
 /// File holding the criteria-feasibility assessments.
 pub const REVIEW: &str = "review.json";
 /// File holding the plan-task sign-off sheet.

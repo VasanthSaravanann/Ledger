@@ -1,9 +1,8 @@
-//! Criteria-feasibility tracking and the post-pilot go/no-go review (Tasks 4.2
-//! and 4.3).
+//! Criteria feasibility and the v2 go/no-go routing (Tasks 4.2 and 4.3).
 //!
-//! Metric 3 is deliberately not numeric: it records whether the Hiring Manager
-//! and Legal could actually agree a structured criteria list for the role, which
-//! decides whether v2 goes to engineering or to criteria-validation consulting.
+//! Routing is a lookup over the pre-registered metric ratings, applied in the
+//! order V2 lists the consequences. It is not a score: a red candidate-value
+//! signal stops v2 even if every other metric is green.
 
 use std::fmt;
 use std::str::FromStr;
@@ -13,52 +12,73 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::id::RequisitionId;
-use crate::metrics::Metrics;
+use crate::metrics::{Metrics, Rating};
 use crate::store::{self, Store};
 use crate::text;
 
-/// Whether a structured criteria list could be agreed for the role.
+/// Whether HM and Legal could agree structured criteria and the
+/// inherent-requirement justifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum CriteriaAssessment {
-    /// The review has not happened yet.
-    NotAssessed,
-    /// HM and Legal agreed a structured criteria list.
-    Agreed,
-    /// HM and Legal could not agree one.
-    Disputed,
+pub enum CriteriaFeasibility {
+    /// Could not agree: red.
+    NotAgreed,
+    /// Agreed in one session: green.
+    AgreedOneSession,
+    /// Agreed only with external input: amber.
+    AgreedWithExternalInput,
 }
 
-impl CriteriaAssessment {
-    /// The stable code used in storage and on the command line.
+impl CriteriaFeasibility {
+    /// Every outcome.
+    pub const ALL: [Self; 3] = [
+        Self::AgreedOneSession,
+        Self::AgreedWithExternalInput,
+        Self::NotAgreed,
+    ];
+
+    /// The stored code.
     pub fn code(self) -> &'static str {
         match self {
-            Self::NotAssessed => "not-assessed",
-            Self::Agreed => "agreed",
-            Self::Disputed => "disputed",
+            Self::NotAgreed => "not-agreed",
+            Self::AgreedOneSession => "agreed-one-session",
+            Self::AgreedWithExternalInput => "agreed-with-external-input",
+        }
+    }
+
+    /// The pre-registered rating.
+    pub fn rating(self) -> Rating {
+        match self {
+            Self::AgreedOneSession => Rating::Green,
+            Self::AgreedWithExternalInput => Rating::Amber,
+            Self::NotAgreed => Rating::Red,
         }
     }
 }
 
-impl fmt::Display for CriteriaAssessment {
+impl fmt::Display for CriteriaFeasibility {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.code())
     }
 }
 
-impl FromStr for CriteriaAssessment {
+impl FromStr for CriteriaFeasibility {
     type Err = Error;
 
     fn from_str(value: &str) -> Result<Self> {
-        match value.trim().to_lowercase().as_str() {
-            "not-assessed" | "unassessed" => Ok(Self::NotAssessed),
-            "agreed" | "feasible" => Ok(Self::Agreed),
-            "disputed" | "not-feasible" => Ok(Self::Disputed),
-            other => Err(Error::invalid(
-                "criteria assessment",
-                format!("expected agreed, disputed or not-assessed; got {other:?}"),
-            )),
-        }
+        let needle = value.trim().to_lowercase();
+        Self::ALL
+            .into_iter()
+            .find(|feasibility| feasibility.code() == needle)
+            .ok_or_else(|| {
+                Error::invalid(
+                    "criteria feasibility",
+                    format!(
+                        "expected agreed-one-session, agreed-with-external-input or not-agreed; \
+                         got {value:?}"
+                    ),
+                )
+            })
     }
 }
 
@@ -68,16 +88,16 @@ pub struct CriteriaRecord {
     /// The requisition the decision covers.
     pub requisition: RequisitionId,
     /// The decision.
-    pub assessment: CriteriaAssessment,
+    pub feasibility: CriteriaFeasibility,
     /// Who made it.
     pub actor: String,
     /// When.
     pub at: DateTime<Utc>,
-    /// Optional context for the go/no-go pack.
+    /// Optional context for the review pack.
     pub note: Option<String>,
 }
 
-/// The criteria-feasibility decisions, latest per requisition.
+/// The feasibility decisions, latest per requisition.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Reviews {
@@ -125,227 +145,238 @@ impl Reviews {
     }
 
     /// The latest decision for `requisition`.
-    pub fn assessment_for(&self, requisition: &RequisitionId) -> CriteriaAssessment {
+    pub fn feasibility_for(&self, requisition: &RequisitionId) -> CriteriaFeasibility {
         self.records
             .iter()
             .rev()
             .find(|record| &record.requisition == requisition)
-            .map_or(CriteriaAssessment::NotAssessed, |record| record.assessment)
+            .map_or(CriteriaFeasibility::NotAgreed, |record| record.feasibility)
     }
 
-    /// Every recorded decision, in recording order.
+    /// Every recorded decision.
     pub fn records(&self) -> &[CriteriaRecord] {
         &self.records
     }
 }
 
-/// The thresholds the pilot is judged against.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct Policy {
-    /// Metric 1 ceiling: replies per 1,000 sends.
-    pub max_reply_rate_per_1000: f64,
-    /// Metric 2 ceiling: share of rejection attempts blocked by the form.
-    pub max_form_block_rate: f64,
-}
-
-impl Default for Policy {
-    /// The pilot's starting thresholds.
-    ///
-    /// A reply rate above 20 per 1,000 or a form-block rate above 25% means the
-    /// manual pipeline is not affordable as designed, so v2 does not start.
-    fn default() -> Self {
-        Self {
-            max_reply_rate_per_1000: 20.0,
-            max_form_block_rate: 0.25,
-        }
-    }
-}
-
-impl Policy {
-    /// Loads the thresholds, falling back to [`Policy::default`].
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::Io`] or [`Error::Json`] when the file exists but is bad.
-    pub fn load(store: &Store) -> Result<Self> {
-        Ok(store.load(store::POLICY)?.unwrap_or_default())
-    }
-
-    /// Saves the thresholds.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::Io`] or [`Error::Json`] when the file cannot be written.
-    pub fn save(&self, store: &Store) -> Result<()> {
-        store.save(store::POLICY, self)
-    }
-}
-
-/// What the pilot says about v2.
+/// What v2 should do next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Recommendation {
-    /// Metrics within policy and criteria agreed: start v2 engineering.
-    ProceedToV2Engineering,
-    /// HM and Legal could not agree structured criteria: resolve that first.
-    RunCriteriaValidationConsulting,
-    /// Metrics exceeded policy: fix the manual pipeline before automating it.
-    HoldAndIterate,
+pub enum Action {
+    /// Candidate-value signal red: do not build v2.
+    Stop,
+    /// Gate-mismatch rate red: live discrimination exposure.
+    FlagDiscriminationExposure,
+    /// Form-block rate red: build capture-discipline middleware.
+    BuildCaptureDisciplineMiddleware,
+    /// Block rate green and criteria green: thin middleware, reassess viability.
+    ReassessVentureViability,
+    /// Reply volume red: scope automated triage into v2.
+    ScopeReplyTriage,
+    /// Criteria not agreed: pivot to criteria-validation tooling.
+    PivotToCriteriaValidation,
 }
 
-impl Recommendation {
-    /// The stable code used in storage and on the command line.
+impl Action {
+    /// The stored code.
     pub fn code(self) -> &'static str {
         match self {
-            Self::ProceedToV2Engineering => "proceed-to-v2-engineering",
-            Self::RunCriteriaValidationConsulting => "run-criteria-validation-consulting",
-            Self::HoldAndIterate => "hold-and-iterate",
+            Self::Stop => "stop",
+            Self::FlagDiscriminationExposure => "flag-discrimination-exposure",
+            Self::BuildCaptureDisciplineMiddleware => "build-capture-discipline-middleware",
+            Self::ReassessVentureViability => "reassess-venture-viability",
+            Self::ScopeReplyTriage => "scope-reply-triage",
+            Self::PivotToCriteriaValidation => "pivot-to-criteria-validation",
         }
     }
 }
 
-impl fmt::Display for Recommendation {
+impl fmt::Display for Action {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.code())
     }
 }
 
-/// The compiled go/no-go decision.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GoNoGo {
-    /// The requisition reviewed.
-    pub requisition: RequisitionId,
-    /// The pilot metrics.
-    pub metrics: Metrics,
-    /// Metric 3.
-    pub criteria: CriteriaAssessment,
-    /// The thresholds applied.
-    pub policy: Policy,
-    /// Every threshold the pilot exceeded, in plain words.
-    pub breaches: Vec<String>,
-    /// The decision.
-    pub recommendation: Recommendation,
-    /// One paragraph explaining the decision.
-    pub rationale: String,
+/// One routing consequence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Decision {
+    /// What to do.
+    pub action: Action,
+    /// The V2 rule that fired.
+    pub rule: String,
+    /// The reading that triggered it.
+    pub detail: String,
 }
 
-impl GoNoGo {
-    /// Builds the decision. This is the whole of Task 4.3's rule set.
-    ///
-    /// 1. Unresolved criteria feasibility sends v2 to criteria-validation
-    ///    consulting, whatever the metrics say: engineering cannot build a
-    ///    criteria list that the Hiring Manager and Legal have not agreed.
-    /// 2. With criteria agreed and no threshold exceeded, v2 engineering starts.
-    /// 3. Otherwise the manual pipeline is too expensive as designed and the
-    ///    pilot iterates before any engineering.
-    pub fn decide(
+/// The compiled routing decision.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Routing {
+    /// The requisition reviewed.
+    pub requisition: RequisitionId,
+    /// The metrics the decision read.
+    pub metrics: Metrics,
+    /// Metric 4.
+    pub criteria: CriteriaFeasibility,
+    /// Every consequence, most urgent first. Empty means no rule fired.
+    pub decisions: Vec<Decision>,
+}
+
+impl Routing {
+    /// Applies the V2 routing table, in the order V2 lists it.
+    pub fn route(
         requisition: RequisitionId,
         metrics: Metrics,
-        criteria: CriteriaAssessment,
-        policy: Policy,
+        criteria: CriteriaFeasibility,
     ) -> Self {
-        let mut breaches = Vec::new();
-        if metrics.reply_rate_per_1000 > policy.max_reply_rate_per_1000 {
-            breaches.push(format!(
-                "reply volume rate {:.1} per 1,000 sends exceeds the {:.1} ceiling",
-                metrics.reply_rate_per_1000, policy.max_reply_rate_per_1000
-            ));
-        }
-        if metrics.form_block_rate > policy.max_form_block_rate {
-            breaches.push(format!(
-                "form-block rate {:.1}% exceeds the {:.1}% ceiling",
-                metrics.form_block_rate * 100.0,
-                policy.max_form_block_rate * 100.0
-            ));
+        let mut decisions = Vec::new();
+
+        if metrics.ratings.candidate_value == Some(Rating::Red) {
+            decisions.push(Decision {
+                action: Action::Stop,
+                rule: "candidate-value signal red (< 30% yes)".to_owned(),
+                detail: format!(
+                    "yes share {:.1}%",
+                    metrics.candidate_value_yes_share.unwrap_or(0.0) * 100.0
+                ),
+            });
+            // Stop means stop: no other consequence is worth acting on.
+            return Self {
+                requisition,
+                metrics,
+                criteria,
+                decisions,
+            };
         }
 
-        let (recommendation, rationale) = match criteria {
-            CriteriaAssessment::Agreed if breaches.is_empty() => (
-                Recommendation::ProceedToV2Engineering,
-                format!(
-                    "Criteria were agreed and both decision metrics sit inside policy \
-                     ({} sends, {:.1} replies per 1,000, {:.1}% of attempts blocked). Start v2 \
-                     engineering.",
-                    metrics.sends,
-                    metrics.reply_rate_per_1000,
-                    metrics.form_block_rate * 100.0
+        if metrics.ratings.gate_mismatch == Rating::Red {
+            decisions.push(Decision {
+                action: Action::FlagDiscriminationExposure,
+                rule: "gate-mismatch rate red (> 10%)".to_owned(),
+                detail: format!(
+                    "{} of {} GATE records failed the knockout consistency check",
+                    metrics.gate_mismatches,
+                    metrics.gate_sends + metrics.gate_mismatches
                 ),
-            ),
-            CriteriaAssessment::Agreed => (
-                Recommendation::HoldAndIterate,
-                format!(
-                    "Criteria were agreed, but {} threshold(s) were exceeded: {}. Fix the manual \
-                     pipeline before automating it.",
-                    breaches.len(),
-                    breaches.join("; ")
+            });
+        }
+
+        if metrics.ratings.form_block == Rating::Red {
+            decisions.push(Decision {
+                action: Action::BuildCaptureDisciplineMiddleware,
+                rule: "form-block rate red (> 25%)".to_owned(),
+                detail: format!(
+                    "{} of {} rejection attempts were blocked",
+                    metrics.blocked,
+                    metrics.blocked + metrics.sends
                 ),
-            ),
-            other => (
-                Recommendation::RunCriteriaValidationConsulting,
-                format!(
-                    "Criteria feasibility is {other}, so the v2 Tier 1 fork is unresolved. Run \
-                     criteria-validation consulting before estimating v2 engineering, whatever the \
-                     metrics show."
+            });
+        }
+
+        if metrics.ratings.form_block == Rating::Green
+            && criteria == CriteriaFeasibility::AgreedOneSession
+        {
+            decisions.push(Decision {
+                action: Action::ReassessVentureViability,
+                rule: "form-block rate green + criteria feasibility yes".to_owned(),
+                detail: "the manual pipeline is already cheap and the criteria are settled"
+                    .to_owned(),
+            });
+        }
+
+        if metrics.ratings.reply_volume == Rating::Red {
+            decisions.push(Decision {
+                action: Action::ScopeReplyTriage,
+                rule: "reply volume red (> 80 per 1,000)".to_owned(),
+                detail: format!(
+                    "{:.1} replies per 1,000 sends",
+                    metrics.reply_volume_per_1000
                 ),
-            ),
-        };
+            });
+        }
+
+        if criteria == CriteriaFeasibility::NotAgreed {
+            decisions.push(Decision {
+                action: Action::PivotToCriteriaValidation,
+                rule: "criteria feasibility no".to_owned(),
+                detail: "HM and Legal could not agree structured criteria".to_owned(),
+            });
+        }
 
         Self {
             requisition,
             metrics,
             criteria,
-            policy,
-            breaches,
-            recommendation,
-            rationale,
+            decisions,
         }
+    }
+
+    /// The most urgent consequence, if any.
+    pub fn primary(&self) -> Option<&Decision> {
+        self.decisions.first()
+    }
+
+    /// Whether any rule fired.
+    pub fn is_empty(&self) -> bool {
+        self.decisions.is_empty()
     }
 }
 
-impl fmt::Display for GoNoGo {
+impl fmt::Display for Routing {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(formatter, "Go/no-go review for {}", self.requisition)?;
+        writeln!(formatter, "v2 routing for {}", self.requisition)?;
         writeln!(formatter, "{}", self.metrics)?;
-        writeln!(formatter, "criteria feasibility:  {}", self.criteria)?;
         writeln!(
             formatter,
-            "policy:                <= {:.1} replies per 1,000, <= {:.0}% blocked",
-            self.policy.max_reply_rate_per_1000,
-            self.policy.max_form_block_rate * 100.0
+            "criteria feasibility: {:.0}  [{}]",
+            self.criteria,
+            self.criteria.rating()
         )?;
-        if self.breaches.is_empty() {
-            writeln!(formatter, "breaches:              none")?;
-        } else {
-            for breach in &self.breaches {
-                writeln!(formatter, "breach:                {breach}")?;
-            }
+        if self.decisions.is_empty() {
+            return write!(
+                formatter,
+                "\nno routing rule fired: all metrics are amber or better and criteria are agreed \
+                 with external input"
+            );
         }
-        writeln!(formatter, "recommendation:        {}", self.recommendation)?;
-        write!(formatter, "\n{}", self.rationale)
+        writeln!(formatter, "\nrouting:")?;
+        for (index, decision) in self.decisions.iter().enumerate() {
+            writeln!(
+                formatter,
+                "  {}. {} ({}) — {}",
+                index + 1,
+                decision.action,
+                decision.rule,
+                decision.detail
+            )?;
+        }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metrics::{Metrics, Ratings, SignalValue};
     use std::collections::BTreeMap;
 
-    fn metrics(sends: u64, replies: u64, blocked: u64) -> Metrics {
+    fn metrics(reply: Rating, block: Rating, mismatch: Rating, value: Option<Rating>) -> Metrics {
         Metrics {
-            sends,
-            replies,
-            blocked,
-            reply_rate_per_1000: if sends == 0 {
-                0.0
-            } else {
-                replies as f64 / sends as f64 * 1_000.0
+            sends: 100,
+            replies: 5,
+            blocked: 10,
+            gate_sends: 20,
+            gate_mismatches: 0,
+            reply_volume_per_1000: 50.0,
+            form_block_rate: 0.09,
+            gate_mismatch_rate: 0.0,
+            candidate_value_yes_share: value.map(|_| 0.6),
+            signals: BTreeMap::<SignalValue, u64>::new(),
+            ratings: Ratings {
+                reply_volume: reply,
+                form_block: block,
+                gate_mismatch: mismatch,
+                candidate_value: value,
             },
-            form_block_rate: if sends + blocked == 0 {
-                0.0
-            } else {
-                blocked as f64 / (sends + blocked) as f64
-            },
-            reply_themes: BTreeMap::new(),
         }
     }
 
@@ -354,76 +385,126 @@ mod tests {
     }
 
     #[test]
-    fn agreed_criteria_and_cheap_metrics_proceed() {
-        let review = GoNoGo::decide(
+    fn a_red_value_signal_stops_everything() {
+        let routing = Routing::route(
             requisition(),
-            metrics(150, 2, 10),
-            CriteriaAssessment::Agreed,
-            Policy::default(),
+            metrics(Rating::Red, Rating::Red, Rating::Red, Some(Rating::Red)),
+            CriteriaFeasibility::NotAgreed,
         );
-        assert_eq!(
-            review.recommendation,
-            Recommendation::ProceedToV2Engineering
-        );
-        assert!(review.breaches.is_empty());
+        assert_eq!(routing.decisions.len(), 1);
+        assert_eq!(routing.primary().expect("primary").action, Action::Stop);
     }
 
     #[test]
-    fn unresolved_criteria_always_sends_work_to_consulting() {
-        for criteria in [
-            CriteriaAssessment::Disputed,
-            CriteriaAssessment::NotAssessed,
-        ] {
-            let review = GoNoGo::decide(
-                requisition(),
-                metrics(150, 1, 0),
-                criteria,
-                Policy::default(),
-            );
+    fn red_block_rate_points_at_capture_discipline() {
+        let routing = Routing::route(
+            requisition(),
+            metrics(
+                Rating::Green,
+                Rating::Red,
+                Rating::Green,
+                Some(Rating::Amber),
+            ),
+            CriteriaFeasibility::AgreedWithExternalInput,
+        );
+        assert_eq!(
+            routing.primary().expect("primary").action,
+            Action::BuildCaptureDisciplineMiddleware
+        );
+    }
+
+    #[test]
+    fn a_mismatch_red_flags_exposure_before_block_rate() {
+        let routing = Routing::route(
+            requisition(),
+            metrics(Rating::Green, Rating::Red, Rating::Red, Some(Rating::Green)),
+            CriteriaFeasibility::AgreedOneSession,
+        );
+        assert_eq!(
+            routing.primary().expect("primary").action,
+            Action::FlagDiscriminationExposure
+        );
+    }
+
+    #[test]
+    fn green_block_and_green_criteria_reassess_viability() {
+        let routing = Routing::route(
+            requisition(),
+            metrics(
+                Rating::Green,
+                Rating::Green,
+                Rating::Green,
+                Some(Rating::Green),
+            ),
+            CriteriaFeasibility::AgreedOneSession,
+        );
+        assert_eq!(
+            routing.primary().expect("primary").action,
+            Action::ReassessVentureViability
+        );
+    }
+
+    #[test]
+    fn unagreed_criteria_pivot_to_consulting() {
+        let routing = Routing::route(
+            requisition(),
+            metrics(
+                Rating::Green,
+                Rating::Green,
+                Rating::Green,
+                Some(Rating::Green),
+            ),
+            CriteriaFeasibility::NotAgreed,
+        );
+        assert_eq!(
+            routing
+                .decisions
+                .iter()
+                .map(|decision| decision.action)
+                .collect::<Vec<Action>>(),
+            vec![Action::PivotToCriteriaValidation],
+            "reassessing viability needs criteria agreed, so only the pivot applies"
+        );
+    }
+
+    #[test]
+    fn thin_middleware_and_red_reply_volume_can_both_apply() {
+        let routing = Routing::route(
+            requisition(),
+            metrics(
+                Rating::Red,
+                Rating::Green,
+                Rating::Green,
+                Some(Rating::Green),
+            ),
+            CriteriaFeasibility::AgreedOneSession,
+        );
+        assert_eq!(
+            routing
+                .decisions
+                .iter()
+                .map(|decision| decision.action)
+                .collect::<Vec<Action>>(),
+            vec![Action::ReassessVentureViability, Action::ScopeReplyTriage]
+        );
+    }
+
+    #[test]
+    fn feasibility_ratings_match_the_table() {
+        assert_eq!(
+            CriteriaFeasibility::AgreedOneSession.rating(),
+            Rating::Green
+        );
+        assert_eq!(
+            CriteriaFeasibility::AgreedWithExternalInput.rating(),
+            Rating::Amber
+        );
+        assert_eq!(CriteriaFeasibility::NotAgreed.rating(), Rating::Red);
+        for feasibility in CriteriaFeasibility::ALL {
             assert_eq!(
-                review.recommendation,
-                Recommendation::RunCriteriaValidationConsulting
+                CriteriaFeasibility::from_str(feasibility.code()).expect("parses"),
+                feasibility
             );
         }
-    }
-
-    #[test]
-    fn expensive_metrics_hold_even_with_agreed_criteria() {
-        let review = GoNoGo::decide(
-            requisition(),
-            metrics(100, 40, 60),
-            CriteriaAssessment::Agreed,
-            Policy::default(),
-        );
-        assert_eq!(review.recommendation, Recommendation::HoldAndIterate);
-        assert_eq!(review.breaches.len(), 2);
-    }
-
-    #[test]
-    fn assessment_replaces_the_previous_one() {
-        let mut reviews = Reviews::default();
-        reviews
-            .assess(CriteriaRecord {
-                requisition: requisition(),
-                assessment: CriteriaAssessment::Disputed,
-                actor: "M. Okafor".to_owned(),
-                at: Utc::now(),
-                note: None,
-            })
-            .expect("first assessment");
-        reviews
-            .assess(CriteriaRecord {
-                requisition: requisition(),
-                assessment: CriteriaAssessment::Agreed,
-                actor: "M. Okafor".to_owned(),
-                at: Utc::now(),
-                note: Some("  agreed after a second workshop  ".to_owned()),
-            })
-            .expect("second assessment");
-        assert_eq!(reviews.records().len(), 1);
-        assert_eq!(
-            reviews.assessment_for(&requisition()),
-            CriteriaAssessment::Agreed
-        );
     }
 }

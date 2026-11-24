@@ -1,123 +1,149 @@
 # Ledger
 
-Rust tooling for the **v1 manual candidate feedback pilot** described in
-[`plan.md`](plan.md): one employer, one high-volume requisition, initial screen
-only, 100% of rejected candidates, no ATS API integration.
+Audit-grade candidate feedback pilot, implemented in Rust. The operational spec is
+[`V2.md`](V2.md); the earlier v1 scope is [`plan.md`](plan.md).
 
-The pilot's constraints are enforced by the program rather than by a process
-document:
+The point of the tool is that V2's constraints are not review instructions — they
+are types, lint rules, and append-only logs.
 
-| Plan task | Where it lives |
+## What V2 requires, and where it lives
+
+| V2 task | Implementation |
 | --- | --- |
-| 1.2 Single-pass HM + Legal sign-off | `approval.rs` — a role signs once, and copy is unusable until both have |
-| 2.1 Locked disposition form | `disposition.rs` — a three-variant enum, no free text, no "Other", append-only |
-| 2.2 Tier 0 gate-text library | `gate.rs` — five Australian knockouts, each with requirement / satisfaction / waiver |
-| 2.3 Role-level comparative paragraph | `requisition.rs` — one static paragraph, signed off separately, no merge slots |
-| 2.4 Three master templates | `template.rs` — allow-listed merge slots, required slots per category |
-| 3.1 ATS export and merge mapping | `ats.rs` — CSV keyed on `application_id`, optional `knockout_*` answers |
-| 3.2 Immutable send log | `log.rs` — append-only JSONL, SHA-256 hash chain, refuses to extend a broken log |
-| 3.3 Gate-blocking protocol | `pipeline.rs` — no send without a completed, timestamped disposition |
-| 4.1 Pilot execution | `ledger dispatch` |
-| 4.2 The three decision metrics | `metrics.rs` — reply volume rate, form-block rate, criteria feasibility |
-| 4.3 Go/no-go review | `review.rs` — policy thresholds and the recommendation |
-| 1.1, 1.3, and the rest | `checklist.rs` — the task sheet, signed off by a named person |
+| 1.1 Retention sign-off | `policy.rs` — `retention_days` on the record (`ledger governance`) |
+| 1.2 Monitored mailbox + escalation | `id::Mailbox` refuses `no-reply@`; `policy.rs` holds the named ER/Legal owner and SLA |
+| 1.3 Single-pass sign-off | `approval.rs` — one signature per role, HM + Legal required, on the gate library, the requisition, the paragraph, the templates, and the playbook |
+| 2.1 Locked form | `disposition.rs` — `GATE`/`FIELD`/`ADMIN` only, no free text, no "Other", named `DECISION_MAKER_ID`, append-only, `SUPERSEDES` corrections |
+| 2.2 Versioned gate blocks | `gate.rs` — `GATE-01`..`GATE-05` with `TEXT_VERSION`; `GATE-02`..`05` declare the requisition facts they need and are **unavailable** without them |
+| 2.3 Role-level paragraph | `requisition.rs` — elicited into five slots and rejected at sign-off for relative superiority, implied deficit, subjective proxies, or a years bar |
+| 2.4 Templates + value signal | `template.rs` — Templates A/B/C with allow-listed slots, `{{FEEDBACK_DECLINE}}`, `{{REENGAGEMENT_LINE}}`, and three one-click `mailto:` signals |
+| 2.5 Reply playbook | `playbook.rs` — five signed-off scripts; the discrimination script carries the one-business-day escalation |
+| 3.1 ATS export + hard filter | `ats.rs` — `KO_ANSWER_01..05` → `GATE-01..05`; rows past the initial screen are dropped at import |
+| 3.2 Immutable send log | `log.rs` — every V2 column, SHA-256 chained, refuses to extend a broken log |
+| 3.3 Validation script | `pipeline.rs` — three circuit-breakers, then render, then append |
+| 4.1 Runbook | `qa.rs` — QA required for 100% of `GATE` and a deterministic 10% sample of `FIELD`/`ADMIN`; `dispatch --preview` for the dry run |
+| 4.2 Five metrics | `metrics.rs` — pre-registered green/amber/red bands |
+| 4.3 Routing decision | `review.rs` — the six V2 consequences, applied in order |
+| Task sheet | `checklist.rs` — the thirteen tasks, signed by a named person |
 
 ## Quick start
 
 ```bash
 cargo build --release
 
-ledger init --data pilot            # seed gate copy, templates, policy
+# 1. Governance and static copy (single pass, HM + Legal)
+ledger init --data pilot
+ledger governance set --data pilot --escalation-owner "M. Okafor, Employee Relations"
+for role in hiring-manager legal; do
+  ledger gate approve      --data pilot --actor "J. Chen"   --role $role
+  ledger templates approve --data pilot --actor "M. Okafor" --role $role
+  ledger playbook approve  --data pilot --actor "M. Okafor" --role $role
+done
 
-# Phase 1-2: sign off the static copy in one pass
-ledger templates approve --data pilot --actor "J. Chen" --role hiring-manager
-ledger templates approve --data pilot --actor "M. Okafor" --role legal
-ledger gate approve      --data pilot --actor "J. Chen" --role hiring-manager
-ledger gate approve      --data pilot --actor "M. Okafor" --role legal
-
-# The requisition, its comparative paragraph, and its sign-off
+# 2. Requisition with its facts documented before posting
 ledger requisition create --data pilot --id REQ-2026-014 \
   --employer "Example Health" --title "Registered Nurse" \
   --reply-to careers-feedback@example.com.au \
-  --gate visa-restrictions --gate right-to-work
-ledger requisition comparative --data pilot --id REQ-2026-014 --file paragraph.txt
+  --sender-name "R. Patel" --sender-title "Recruitment Coordinator" \
+  --gate right-to-work --gate work-rights-duration \
+  --fact ROLE_END_OR_MIN_TERM="30 June 2027" \
+  --fact MIN_TERM="12 months" \
+  --fact ROLE_DURATION_REASON="The appointment is a fixed-term 12-month contract."
+
+# 3. The comparative paragraph, then its sign-off
+ledger requisition comparative --data pilot --id REQ-2026-014 \
+  --attribute-1 "assessment of deteriorating patients" \
+  --attribute-2 "escalation to a registrar within their first hour" \
+  --attribute-3 "documentation a covering clinician could act on" \
+  --evidence "a de-identified case note attached to the application" \
+  --non-factors "a post-graduate qualification or a specific employer"
 ledger requisition approve --data pilot --id REQ-2026-014 --actor "J. Chen" --role hiring-manager
 ledger requisition approve --data pilot --id REQ-2026-014 --actor "M. Okafor" --role legal
 ledger requisition approve --data pilot --id REQ-2026-014 --comparative --actor "J. Chen" --role hiring-manager
 ledger requisition approve --data pilot --id REQ-2026-014 --comparative --actor "M. Okafor" --role legal
 
-# Phase 3-4: import, capture, dispatch, measure
+# 4. Import, capture, QA, dispatch
 ledger ats import --data pilot --requisition REQ-2026-014 --file export.csv
 ledger disposition record --data pilot --requisition REQ-2026-014 \
-  --application APP-1001 --email ada@example.com --name "Ada Lovelace" \
-  --recruiter rec-rui --category failed-gate \
-  --gate visa-restrictions --answer restricted
+  --application APP-1001 --first-name Ada --email ada@example.com \
+  --recruiter rec-rui --decision-maker dm-chen \
+  --category GATE --gate work-rights-duration --answer shorter-than-role
 ledger dispatch --data pilot --requisition REQ-2026-014 --preview
+ledger qa record --data pilot --requisition REQ-2026-014 --application APP-1001 --qa qa-patel
 ledger dispatch --data pilot --requisition REQ-2026-014
-ledger log verify --data pilot
-ledger reply record --data pilot --requisition REQ-2026-014 --theme gate-question
-ledger metrics --data pilot --requisition REQ-2026-014
-ledger review criteria --data pilot --requisition REQ-2026-014 --status agreed --actor "M. Okafor"
-ledger review report --data pilot --requisition REQ-2026-014
-ledger status --data pilot
-```
 
-`ledger status` prints the `plan.md` task sheet next to the evidence the
-workspace actually holds.
+# 5. Evidence and decision
+ledger log verify --data pilot
+ledger log export --data pilot --requisition REQ-2026-014 --out send-log.csv
+ledger reply  record --data pilot --requisition REQ-2026-014 --application APP-1002 --scenario next-time-guidance
+ledger signal record --data pilot --requisition REQ-2026-014 --value yes --count 2
+ledger metrics --data pilot --requisition REQ-2026-014
+ledger review criteria --data pilot --requisition REQ-2026-014 --status agreed-one-session --actor "M. Okafor"
+ledger review route --data pilot --requisition REQ-2026-014
+```
 
 ## ATS export schema
 
 ```csv
-application_id,candidate_name,email,knockout_visa-restrictions
-APP-1001,Ada Lovelace,ada@example.com,restricted
-APP-1002,Grace Hopper,grace@example.com,
+APPLICATION_ID,FIRST_NAME,EMAIL,REQ_ID,ROLE_TITLE,STAGE_AT_REJECTION,KO_ANSWER_01,KO_ANSWER_02,APPLIED_DATE
+APP-1001,Ada,ada@example.com,REQ-2026-014,Registered Nurse,Initial screen,not-held,shorter-than-role,2026-11-01
 ```
 
-`application_id`, `candidate_name`, and `email` are required. Any
-`knockout_<gate>` column is optional; when present, the disposition's gate
-answer must agree with it or the send is blocked.
+`APPLICATION_ID`, `FIRST_NAME`, `EMAIL`, `REQ_ID`, and `STAGE_AT_REJECTION` are
+required. `KO_ANSWER_01..KO_ANSWER_05` map to `GATE-01..GATE-05` in order. Any row
+whose stage is not the initial screen is **dropped at import** — an interviewed
+candidate can never enter the roster, so `Template B` cannot reach them.
 
-## The three metrics
+## Gate availability
 
-1. **Reply volume rate** — replies ÷ sends × 1,000.
-2. **Form-block rate** — blocked attempts ÷ (blocked attempts + sends). A block is
-   counted once per application and reason, so retries do not inflate it.
-3. **Criteria validation feasibility** — recorded, not computed: `agreed`,
-   `disputed`, or `not-assessed`.
+| Gate | Meaning | Required facts |
+| --- | --- | --- |
+| `GATE-01` | Right to work in Australia | — |
+| `GATE-02` | Work-rights duration vs role duration | `ROLE_END_OR_MIN_TERM`, `MIN_TERM`, `ROLE_DURATION_REASON` |
+| `GATE-03` | Legislated registration or accreditation | `REGULATOR_URL` (https, verified) |
+| `GATE-04` | Licence inherent to the duties | `INHERENT_REQUIREMENT_REASON` |
+| `GATE-05` | Location / work location | `LOCATION_REQUIREMENT`, `LOCATION_SATISFACTION_TEXT`, `WAIVER_TEXT` |
 
-`review report` applies the policy in `policy.json` (defaults: ≤ 20 replies per
-1,000 sends, ≤ 25% blocked). The rules are:
+If a gate's facts are missing, `GATE` capture for that gate is refused with an
+instruction to record `FIELD`. That is V2's fallback, enforced rather than advised.
 
-- criteria not agreed → **run criteria-validation consulting** (the v2 Tier 1
-  fork is unresolved, whatever the metrics say);
-- criteria agreed and no threshold breached → **proceed to v2 engineering**;
-- criteria agreed but a threshold breached → **hold and iterate** on the manual
-  pipeline.
+## The three circuit-breakers
 
-## What the tool does not do
+1. **Completeness** — no send without a locked, timestamped disposition.
+2. **Gate consistency** — a `GATE` answer must equal the candidate's own
+   `KO_ANSWER_0n`; a mismatch blocks and tells the operator to escalate, never to
+   auto-correct.
+3. **Version resolution** — the logged `TEXT_VERSION` is the version of the block
+   that actually rendered (`GATE-0n` version for `GATE`, paragraph version for
+   `FIELD`, template version for `ADMIN`), and nothing renders from unsigned copy.
 
-- It does not send email or call the ATS. Per the plan's scope, dispatch is
-  manual: the tool renders the exact text, applies the gate-blocking rule, and
-  records the send. Pasting the rendered email into the ATS or mail client is the
-  operator's step.
-- It does not verify that the reply mailbox is monitored. It does refuse
-  `no-reply`-style addresses.
+Plus the runbook guard: a `GATE` send needs a recorded second-person QA check, and
+one in ten `FIELD`/`ADMIN` applications needs one too.
+
+## Metrics and routing
+
+| Metric | Green | Amber | Red |
+| --- | --- | --- | --- |
+| Reply volume (per 1,000 sends) | < 30 | 30–80 | > 80 |
+| Form-block rate | < 10% | 10–25% | > 25% |
+| Gate-mismatch rate | < 2% | 2–10% | > 10% |
+| Criteria feasibility | yes, 1 session | yes, external input | no |
+| Candidate-value signal ("Yes" share) | > 50% | 30–50% | < 30% |
+
+`review route` applies V2's consequences in order: candidate-value red → **stop**;
+gate-mismatch red → **flag discrimination exposure**; form-block red → **capture
+discipline middleware**; form-block green + criteria yes → **reassess venture
+viability**; reply volume red → **scope reply triage**; criteria no → **pivot to
+criteria validation**.
 
 ## Workspace files
 
-| File | Contents |
-| --- | --- |
-| `gate_library.json` | the five copy blocks and their sign-off |
-| `templates.json` | the three master templates and their sign-off |
-| `requisitions.json` | requisitions, comparative paragraphs, sign-offs |
-| `roster-<REQ>.json` | the imported ATS snapshot |
-| `dispositions.jsonl` | append-only disposition captures |
-| `send_log.jsonl` | append-only, hash-chained sends with exact text |
-| `blocked.jsonl` | append-only refusals from the gate-blocking protocol |
-| `replies.jsonl` | append-only reply tally |
-| `review.json` | criteria-feasibility decisions |
-| `checklist.json` | plan-task sign-offs |
-| `policy.json` | go/no-go thresholds |
+`gate_library.json`, `templates.json`, `playbook.json`, `requisitions.json`,
+`roster-<REQ>.json`, `dispositions.jsonl`, `qa.jsonl`, `send_log.jsonl`,
+`blocked.jsonl`, `replies.jsonl`, `signals.jsonl`, `review.json`,
+`checklist.json`, `policy.json`.
+
+Every `*.jsonl` file is append-only: there is no update or delete code path.
 
 ## Development
 
@@ -127,8 +153,14 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-Invariants covered by tests: a disposition is captured once and never edited; a
-gate answer must be one the gate offers; a requisition and its paragraph need HM
-and Legal sign-off before any send; every email names the monitored mailbox; the
-same comparative text goes to every candidate; an edited or truncated send log is
-detected before the next append; and dispatch is idempotent.
+78 tests cover: the initial-screen hard filter, the three-variant form, superseding
+corrections, gate unavailability falling back to `FIELD`, the paragraph lint,
+required template slots, QA enforcement, the chain detecting edits and truncation,
+the five metric bands, and the routing order.
+
+## What the tool does not do
+
+It does not send email, call the ATS, or verify that the mailbox is monitored. Per
+V2's scope, dispatch stays manual: the tool renders the exact text, applies the
+circuit-breakers, and records the send. Pasting the rendered email into the ATS or
+mail client is the operator's step.

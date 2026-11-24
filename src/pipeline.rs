@@ -1,19 +1,26 @@
-//! Manual dispatch under the gate-blocking protocol (Tasks 3.3 and 4.1).
+//! Manual dispatch under the three circuit-breakers (Tasks 3.3 and 4.1).
 //!
-//! Feedback is merged and "sent" one application at a time. A send only happens
-//! when a completed, timestamped disposition exists, it matches the requisition,
-//! and — where the ATS export carries the candidate's own answer — the form agrees
-//! with it. Every refusal is logged, which is what makes metric 2 measurable.
+//! Before an email is rendered the pipeline enforces, in order: a locked
+//! disposition exists; the disposition agrees with the ATS export; the gate is
+//! active and its copy resolves; the second-person QA check is recorded; and the
+//! text resolves to a signed-off version. Every refusal is logged, which is what
+//! makes the form-block and gate-mismatch metrics measurable.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::ats::Roster;
-use crate::disposition::{DispositionCategory, Dispositions};
+use crate::disposition::{Disposition, Dispositions};
 use crate::error::{Error, Result};
 use crate::gate::GateLibrary;
-use crate::id::{ApplicationId, CandidateEmail};
-use crate::log::{BlockReason, BlockedAttempt, BlockedLog, SendDraft, SendEntry, SendLog};
+use crate::id::{
+    ApplicationId, CandidateEmail, DispositionId, RequisitionId, TemplateKind, TextVersion,
+};
+use crate::log::{
+    BlockReason, BlockedAttempt, BlockedLog, DeliveryStatus, SendDraft, SendEntry, SendLog,
+};
+use crate::playbook::Playbook;
+use crate::qa::{QaLog, requires_second_person, scope_for};
 use crate::requisition::Requisition;
 use crate::template::{MergeContext, RenderedEmail, Templates, render};
 
@@ -33,10 +40,14 @@ pub struct Preview {
     pub application_id: ApplicationId,
     /// The recipient address.
     pub candidate_email: CandidateEmail,
-    /// The recipient name used as a merge value.
-    pub candidate_name: String,
-    /// The category that authorised the send.
-    pub category: DispositionCategory,
+    /// The recipient's first name.
+    pub candidate_first_name: String,
+    /// The disposition record that authorises the send.
+    pub disposition_id: DispositionId,
+    /// The disposition itself.
+    pub disposition: Disposition,
+    /// The version of the copy that produced the text.
+    pub text_version: TextVersion,
     /// The merged text.
     pub rendered: RenderedEmail,
 }
@@ -48,14 +59,20 @@ pub struct Dispatch<'a> {
     pub mode: Mode,
     /// The requisition being actioned.
     pub requisition: &'a Requisition,
-    /// The gate copy library.
+    /// The signed-off gate copy library.
     pub library: &'a GateLibrary,
-    /// The approved master templates.
+    /// The signed-off templates.
     pub templates: &'a Templates,
+    /// The signed-off reply playbook.
+    pub playbook: &'a Playbook,
     /// The imported ATS roster.
     pub roster: &'a Roster,
     /// Captured dispositions.
     pub dispositions: &'a Dispositions,
+    /// Recorded second-person checks.
+    pub qa: &'a QaLog,
+    /// The delivery status to record on each send.
+    pub delivery_status: DeliveryStatus,
     /// The clock to stamp sends with.
     pub now: DateTime<Utc>,
 }
@@ -67,7 +84,7 @@ pub struct DispatchReport {
     pub sent: Vec<SendEntry>,
     /// Emails rendered but not written.
     pub previews: Vec<Preview>,
-    /// Attempts refused by the gate-blocking protocol.
+    /// Attempts refused by the circuit-breakers.
     pub blocked: Vec<BlockedAttempt>,
 }
 
@@ -81,6 +98,11 @@ impl DispatchReport {
     pub fn blocked_count(&self) -> usize {
         self.blocked.len()
     }
+
+    /// How many emails were rendered in preview mode.
+    pub fn preview_count(&self) -> usize {
+        self.previews.len()
+    }
 }
 
 /// Dispatches feedback for every applicant that has not already been sent to.
@@ -89,8 +111,8 @@ impl DispatchReport {
 ///
 /// Returns [`Error::Invalid`] when the roster belongs to another requisition,
 /// [`Error::RequisitionNotReady`] when the requisition's copy is unsigned,
-/// [`Error::TemplatesNotApproved`] before sign-off, and propagates template and
-/// log errors.
+/// [`Error::TemplatesNotApproved`] or [`Error::PlaybookNotApproved`] before
+/// sign-off, and propagates template and log errors.
 pub fn dispatch(
     job: &Dispatch<'_>,
     send_log: &mut SendLog,
@@ -113,6 +135,9 @@ pub fn dispatch(
     if !job.templates.is_approved() {
         return Err(Error::TemplatesNotApproved);
     }
+    if !job.playbook.is_approved() {
+        return Err(Error::PlaybookNotApproved);
+    }
 
     let mut report = DispatchReport::default();
     for applicant in &job.roster.applicants {
@@ -121,7 +146,7 @@ pub fn dispatch(
             continue;
         }
 
-        let Some(record) = job.dispositions.find(&job.requisition.id, application_id) else {
+        let Some(record) = job.dispositions.head(&job.requisition.id, application_id) else {
             block(
                 job,
                 blocked_log,
@@ -133,7 +158,7 @@ pub fn dispatch(
             continue;
         };
 
-        if record.candidate_email != applicant.email {
+        if record.form.candidate_email != applicant.email {
             block(
                 job,
                 blocked_log,
@@ -142,75 +167,143 @@ pub fn dispatch(
                 Some(&applicant.email),
                 BlockReason::EmailMismatch {
                     export: applicant.email.clone(),
-                    form: record.candidate_email.clone(),
+                    form: record.form.candidate_email.clone(),
                 },
             )?;
             continue;
         }
 
-        if let DispositionCategory::FailedGate { gate, answer } = &record.category {
-            if !job.requisition.gates.contains(gate) {
-                block(
-                    job,
-                    blocked_log,
-                    &mut report,
-                    application_id,
-                    Some(&applicant.email),
-                    BlockReason::GateNotInRequisition { gate: *gate },
-                )?;
-                continue;
+        let gate_text = match &record.form.disposition {
+            Disposition::Gate { gate, answer } => {
+                if !job.requisition.gates.contains(gate) {
+                    block(
+                        job,
+                        blocked_log,
+                        &mut report,
+                        application_id,
+                        Some(&applicant.email),
+                        BlockReason::GateNotInRequisition { gate: *gate },
+                    )?;
+                    continue;
+                }
+                if job
+                    .library
+                    .missing_facts(*gate, &job.requisition.facts)
+                    .is_empty()
+                {
+                    if let Some(declared) = applicant.knockout(*gate)
+                        && declared != *answer
+                    {
+                        block(
+                            job,
+                            blocked_log,
+                            &mut report,
+                            application_id,
+                            Some(&applicant.email),
+                            BlockReason::AnswerMismatch {
+                                gate: *gate,
+                                declared,
+                                recorded: *answer,
+                            },
+                        )?;
+                        continue;
+                    }
+                } else {
+                    block(
+                        job,
+                        blocked_log,
+                        &mut report,
+                        application_id,
+                        Some(&applicant.email),
+                        BlockReason::GateUnavailable { gate: *gate },
+                    )?;
+                    continue;
+                }
+                match job.library.copy_for(*gate) {
+                    Some(copy) => Some(copy.render(&job.requisition.facts)?),
+                    None => {
+                        block(
+                            job,
+                            blocked_log,
+                            &mut report,
+                            application_id,
+                            Some(&applicant.email),
+                            BlockReason::GateUnavailable { gate: *gate },
+                        )?;
+                        continue;
+                    }
+                }
             }
-            if let Some(declared) = applicant.knockout(*gate)
-                && declared != *answer
-            {
-                block(
-                    job,
-                    blocked_log,
-                    &mut report,
-                    application_id,
-                    Some(&applicant.email),
-                    BlockReason::AnswerMismatch {
-                        gate: *gate,
-                        declared,
-                        recorded: *answer,
-                    },
-                )?;
-                continue;
-            }
-        }
-        record.category.validate_against(job.requisition)?;
-
-        let gate_copy = match &record.category {
-            DispositionCategory::FailedGate { gate, .. } => Some(job.library.require(*gate)?),
             _ => None,
         };
-        let context = MergeContext {
-            candidate_name: &applicant.name,
-            requisition: job.requisition,
-            disposition: &record.category,
-            gate_copy,
-        };
-        let template_kind = record.category.template_kind();
+
+        if requires_second_person(record) && !job.qa.approved(&job.requisition.id, application_id) {
+            block(
+                job,
+                blocked_log,
+                &mut report,
+                application_id,
+                Some(&applicant.email),
+                BlockReason::AwaitingSecondPersonQa {
+                    scope: scope_for(&record.form.disposition),
+                },
+            )?;
+            continue;
+        }
+
+        let template_kind = record.form.disposition.kind().template_kind();
         let template = job.templates.require(template_kind)?;
-        let rendered = render(template, &context)?;
+        let rendered = render(
+            template,
+            &MergeContext {
+                candidate_first_name: &record.form.candidate_first_name,
+                requisition: job.requisition,
+                disposition: &record.form.disposition,
+                gate_text: gate_text.as_ref(),
+            },
+        )?;
+
+        // Version resolution: the logged TEXT_VERSION is the copy that rendered.
+        let text_version = match &record.form.disposition {
+            Disposition::Gate { gate, .. } => job.library.require(*gate)?.version.clone(),
+            Disposition::Field => job
+                .requisition
+                .comparative
+                .as_ref()
+                .ok_or_else(|| {
+                    Error::invalid(
+                        "comparative paragraph",
+                        "the requisition has no role-level paragraph",
+                    )
+                })?
+                .version
+                .clone(),
+            Disposition::Admin { .. } => template.version.clone(),
+        };
 
         match job.mode {
             Mode::Preview => report.previews.push(Preview {
-                application_id: record.application_id.clone(),
-                candidate_email: record.candidate_email.clone(),
-                candidate_name: record.candidate_name.clone(),
-                category: record.category.clone(),
+                application_id: record.form.application_id.clone(),
+                candidate_email: record.form.candidate_email.clone(),
+                candidate_first_name: record.form.candidate_first_name.clone(),
+                disposition_id: record.id.clone(),
+                disposition: record.form.disposition.clone(),
+                text_version,
                 rendered,
             }),
             Mode::Execute => {
                 let draft = SendDraft {
                     disposition: record.clone(),
-                    template: template_kind,
+                    text_version,
                     rendered,
+                    delivery_status: job.delivery_status,
                 };
                 report.sent.push(send_log.append(draft, job.now)?);
             }
         }
+
+        // Both branches name `text_version`; keep the binding used exactly once.
+        debug_assert!(template_kind == record.form.disposition.kind().template_kind());
     }
 
     Ok(report)
@@ -240,4 +333,14 @@ fn block(
         report.blocked.push(attempt);
     }
     Ok(())
+}
+
+/// Whether the roster belongs to `requisition`.
+pub fn roster_matches(roster: &Roster, requisition: &RequisitionId) -> bool {
+    &roster.requisition == requisition
+}
+
+/// The template the disposition requires, for report rendering.
+pub fn template_for(disposition: &Disposition) -> TemplateKind {
+    disposition.kind().template_kind()
 }

@@ -2,8 +2,8 @@
 
 use std::path::PathBuf;
 
-use crate::gate::{GateAnswer, GateKind};
-use crate::id::{ApplicationId, RequisitionId, TemplateKind};
+use crate::gate::{FactKey, GateAnswer, GateKind};
+use crate::id::{ApplicationId, DispositionId, RequisitionId, TemplateKind};
 
 /// Result alias used across the crate.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -31,13 +31,61 @@ pub enum Error {
 
     /// A disposition was captured twice for the same application.
     #[error(
-        "a disposition is already recorded for application {application} in requisition {requisition}"
+        "application {application} in requisition {requisition} already has disposition {existing}; \
+         submit a correction that supersedes it"
     )]
     DuplicateDisposition {
         /// The requisition the application belongs to.
         requisition: RequisitionId,
         /// The application that already has a disposition.
         application: ApplicationId,
+        /// The current record for that application.
+        existing: DispositionId,
+    },
+
+    /// A requisition fact a gate block needs has no value.
+    #[error("missing requisition fact {fact}: {fact}")]
+    MissingFact {
+        /// The absent fact.
+        fact: FactKey,
+    },
+
+    /// The gate cannot be used because its requisition facts are missing.
+    #[error(
+        "gate {gate} is unavailable until its facts are documented ({missing:?}); record the \
+         disposition as FIELD instead"
+    )]
+    GateUnavailable {
+        /// The gate that cannot render.
+        gate: GateKind,
+        /// The facts still missing.
+        missing: Vec<FactKey>,
+    },
+
+    /// A disposition record id is not in the log.
+    #[error("unknown disposition record {0}")]
+    UnknownDisposition(DispositionId),
+
+    /// A correction tried to supersede a record that is not the current head.
+    #[error("disposition {0} has already been superseded; correct the current record")]
+    AlreadySuperseded(DispositionId),
+
+    /// A correction tried to supersede another application's record.
+    #[error("disposition {record} belongs to application {owner}, not {application}")]
+    SupersedeMismatch {
+        /// The record being superseded.
+        record: DispositionId,
+        /// The application that owns it.
+        owner: ApplicationId,
+        /// The application on the new record.
+        application: ApplicationId,
+    },
+
+    /// The comparative paragraph failed the sign-off lint.
+    #[error("comparative paragraph failed sign-off: {issues}")]
+    ComparativeRejected {
+        /// Pre-joined lint findings.
+        issues: String,
     },
 
     /// The disposition names a gate that the requisition does not screen on.
@@ -75,6 +123,10 @@ pub enum Error {
     /// The three master templates have not both been approved.
     #[error("the master email templates are not approved")]
     TemplatesNotApproved,
+
+    /// The five reply scripts have not both been approved.
+    #[error("the reply playbook is not approved")]
+    PlaybookNotApproved,
 
     /// A template kind has no draft.
     #[error("no template of kind {0}")]

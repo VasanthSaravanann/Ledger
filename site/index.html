@@ -4,12 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <title>Ledger — v1 candidate feedback pilot</title>
+    <title>Ledger — audit-grade candidate feedback pilot</title>
     <meta
       name="description"
       content="Rust tooling for the v1 manual candidate feedback pilot: a locked disposition form, pre-approved gate copy, an append-only hash-chained send log, and the gate-blocking protocol."
     />
-    <meta property="og:title" content="Ledger — v1 candidate feedback pilot" />
+    <meta property="og:title" content="Ledger — audit-grade candidate feedback pilot" />
     <meta
       property="og:description"
       content="Manually sent, machine-enforced: the pilot's constraints as types and logs, not process documents."
@@ -181,11 +181,11 @@
   </head>
   <body>
     <div class="wrap">
-      <p class="eyebrow">v1 pilot · one requisition · initial screen only</p>
+      <p class="eyebrow">v2 pilot · one requisition · initial screen only</p>
       <h1>Manually sent, machine-enforced.</h1>
       <p class="lede">
-        <strong>Ledger</strong> is Rust tooling for the v1 candidate feedback pilot in
-        <code>plan.md</code>: 100% of rejected candidates on one high-volume requisition get a
+        <strong>Ledger</strong> is Rust tooling for the audit-grade candidate feedback pilot in
+        <code>V2.md</code>: 100% of rejected candidates on one high-volume requisition get a
         human-recorded reason, with no ATS integration and no automated decision.
       </p>
 
@@ -193,22 +193,418 @@
         <li class="card">
           <h3>Locked form</h3>
           <p>
-            Three disposition categories. No free text, no “Other”. Captured once,
-            timestamped, never edited.
+            <code>GATE</code>, <code>FIELD</code>, <code>ADMIN</code> — nothing else. No free
+            text, no “Other”, no “skills mismatch”. A named decision maker and a capture
+            timestamp on every row; corrections supersede, never overwrite.
           </p>
         </li>
         <li class="card">
           <h3>Immutable log</h3>
           <p>
-            Every send is an append-only line whose SHA-256 covers the previous line. Edits and
-            truncation are detected before the next send.
+            Every send carries the full rendered body and its hash, chained to the previous
+            line. Edits and truncation are detected before the next send.
           </p>
         </li>
         <li class="card">
-          <h3>Gate-blocking</h3>
+          <h3>Three circuit-breakers</h3>
           <p>
-            No rejection email is rendered without a completed disposition — and the form’s
-            answer must agree with the candidate’s own ATS knockout answer.
+            Completeness, gate consistency, and version resolution. A form answer that
+            contradicts the candidate’s own ATS answer blocks the send and escalates — it is
+            never auto-corrected.
+          </p>
+        </li>
+      </ul>
+
+      <h2>What the plan’s tasks became</h2>
+      <table>
+        <caption>The constraints live in the type system and the logs, not in a review checklist.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Task</th>
+            <th scope="col">Enforcement</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>2.2 Tier 0 gate copy</td>
+            <td>
+              Five Australian knockouts, each with requirement, what satisfies it, and
+              waivable / time-limited status — unusable until HM and Legal sign off.
+            </td>
+          </tr>
+          <tr>
+            <td>2.3 Comparative paragraph</td>
+            <td>
+              One static paragraph per requisition; merge slots are rejected, so the same text
+              goes to every candidate.
+            </td>
+          </tr>
+          <tr>
+            <td>2.4 Master templates</td>
+            <td>
+              Allow-listed slots only. The only candidate-level value is the name, so the copy
+              cannot be tailored per person.
+            </td>
+          </tr>
+          <tr>
+            <td>3.2 Send log</td>
+            <td>
+              Exact rendered subject and body, plus the disposition capture time, chained and
+              re-verifiable with <code>ledger log verify</code>.
+            </td>
+          </tr>
+          <tr>
+            <td>4.2 Metrics</td>
+            <td>
+              Reply volume per 1,000 sends, form-block rate, and recorded criteria feasibility.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Run it</h2>
+      <pre><code>cargo build --release
+
+ledger init --data pilot
+ledger governance set --data pilot --escalation-owner "M. Okafor, Employee Relations"
+ledger gate approve      --data pilot --actor "J. Chen"   --role hiring-manager
+ledger templates approve --data pilot --actor "M. Okafor" --role legal
+ledger playbook approve  --data pilot --actor "M. Okafor" --role legal
+
+ledger requisition create --data pilot --id REQ-2026-014 \
+  --employer "Example Health" --title "Registered Nurse" \
+  --reply-to careers-feedback@example.com.au \
+  --sender-name "R. Patel" --sender-title "Recruitment Coordinator" \
+  --gate right-to-work --gate work-rights-duration \
+  --fact ROLE_END_OR_MIN_TERM="30 June 2027" \
+  --fact MIN_TERM="12 months" \
+  --fact ROLE_DURATION_REASON="Fixed-term 12-month contract."
+
+ledger ats import --data pilot --requisition REQ-2026-014 --file export.csv
+ledger disposition record --data pilot --requisition REQ-2026-014 \
+  --application APP-1001 --first-name Ada --email ada@example.com \
+  --recruiter rec-rui --decision-maker dm-chen \
+  --category GATE --gate work-rights-duration --answer shorter-than-role
+ledger dispatch --data pilot --requisition REQ-2026-014 --preview
+ledger qa record --data pilot --requisition REQ-2026-014 --application APP-1001 --qa qa-patel
+ledger dispatch --data pilot --requisition REQ-2026-014
+ledger log verify --data pilot
+ledger metrics --data pilot --requisition REQ-2026-014</code></pre>
+
+      <h2>Metrics and routing</h2>
+      <table>
+        <caption>Pre-registered bands; the routing reads them, it does not score them.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Metric</th>
+            <th scope="col">Green</th>
+            <th scope="col">Amber</th>
+            <th scope="col">Red</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Reply volume</td><td>&lt; 30 / 1k</td><td>30–80</td><td>&gt; 80</td></tr>
+          <tr><td>Form-block rate</td><td>&lt; 10%</td><td>10–25%</td><td>&gt; 25%</td></tr>
+          <tr><td>Gate-mismatch rate</td><td>&lt; 2%</td><td>2–10%</td><td>&gt; 10%</td></tr>
+          <tr><td>Criteria feasibility</td><td>yes, 1 session</td><td>yes, external input</td><td>no</td></tr>
+          <tr><td>Candidate-value signal</td><td>&gt; 50% yes</td><td>30–50%</td><td>&lt; 30%</td></tr>
+        </tbody>
+      </table>
+
+      <h2>The routing rule</h2>
+      <ol class="rules">
+        <li>Candidate-value red → <strong>stop</strong>. Do not build v2.</li>
+        <li>Gate-mismatch red → <strong>flag live discrimination exposure</strong> immediately.</li>
+        <li>Form-block red → <strong>capture-discipline middleware</strong> is the v2 signal.</li>
+        <li>Form-block green + criteria yes → <strong>reassess venture viability</strong>.</li>
+        <li>Reply volume red → <strong>scope automated reply triage</strong> into v2.</li>
+        <li>Criteria no → <strong>pivot to criteria-validation tooling</strong>.</li>
+      </ol>
+
+      <footer>
+        <p>
+          The tool renders the exact text, applies the three circuit-breakers, and records the
+          send. It never sends email and never calls the ATS — per the pilot’s scope, dispatch
+          stays manual.
+        </p>
+        <p>Source: <a href="https://github.com/VasanthSaravanann/Ledger">github.com/VasanthSaravanann/Ledger</a></p>
+      </footer>
+    </div>
+  </body>
+</html>        <table>
+        <caption>The constraints live in the type system, the lint, and the logs.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Task</th>
+            <th scope="col">Enforcement</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>2.1 Locked form</td>
+            <td>
+              Three options, named recruiter and decision maker, append-only capture, and
+              <code>SUPERSEDES</code> corrections that keep the original on file.
+            </td>
+          </tr>
+          <tr>
+            <td>2.2 Gate blocks</td>
+            <td>
+              <code>GATE-01</code>–<code>GATE-05</code> are versioned. A gate whose requisition
+              facts are undocumented cannot be captured — the row must be recorded as
+              <code>FIELD</code>.
+            </td>
+          </tr>
+          <tr>
+            <td>2.3 Role-level paragraph</td>
+            <td>
+              Elicited into five slots, then rejected at sign-off for relative superiority,
+              implied deficit, subjective proxies, or a years-of-experience bar.
+            </td>
+          </tr>
+          <tr>
+            <td>2.4 Templates</td>
+            <td>
+              Template A/B/C with allow-listed slots, a fixed paragraph declining individual
+              feedback, and three one-click value signals.
+            </td>
+          </tr>
+          <tr>
+            <td>3.1 ATS filter</td>
+            <td>
+              Rows past the initial screen are dropped at import, so an interviewed candidate
+              can never receive Template B.
+            </td>
+          </tr>
+          <tr>
+            <td>4.1 QA runbook</td>
+            <td>
+              100% of <code>GATE</code> emails and a deterministic 10% of
+              <code>FIELD</code>/<code>ADMIN</code> need a recorded second-person check before
+              dispatch.
+            </td>
+          </tr>
+          <tr>
+            <td>4.2–4.3 Metrics and routing</td>
+            <td>
+              Five pre-registered green/amber/red bands, and the six V2 consequences applied in
+              order.
+            </td>
+          </tr>
+        </tbody>
+      </table>l>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Ledger — audit-grade candidate feedback pilot</title>
+    <meta
+      name="description"
+      content="Rust tooling for the v1 manual candidate feedback pilot: a locked disposition form, pre-approved gate copy, an append-only hash-chained send log, and the gate-blocking protocol."
+    />
+    <meta property="og:title" content="Ledger — audit-grade candidate feedback pilot" />
+    <meta
+      property="og:description"
+      content="Manually sent, machine-enforced: the pilot's constraints as types and logs, not process documents."
+    />
+    <meta property="og:type" content="website" />
+    <style>
+      :root {
+        --bg: #fbfbfa;
+        --fg: #17181a;
+        --muted: #5f646b;
+        --line: #dcdcd7;
+        --card: #ffffff;
+        --accent: #1a4fd6;
+        --code-bg: #f2f2ee;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111214;
+          --fg: #e8e8e4;
+          --muted: #9aa0a6;
+          --line: #2b2d31;
+          --card: #17191c;
+          --accent: #8fb0ff;
+          --code-bg: #1c1f23;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.65 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+          sans-serif;
+      }
+      .wrap {
+        max-width: 68ch;
+        margin: 0 auto;
+        padding: 3.5rem 1.25rem 4rem;
+      }
+      .eyebrow {
+        margin: 0 0 0.75rem;
+        font-size: 0.8125rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: clamp(1.9rem, 5vw, 2.6rem);
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+      }
+      .lede {
+        margin: 0 0 2.5rem;
+        font-size: 1.0625rem;
+        color: var(--muted);
+        max-width: 60ch;
+      }
+      h2 {
+        margin: 3rem 0 1rem;
+        font-size: 1.125rem;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 0 0 1rem;
+      }
+      a {
+        color: var(--accent);
+      }
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+        border-radius: 2px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+        gap: 0.875rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 1rem 1.125rem;
+      }
+      .card h3 {
+        margin: 0 0 0.25rem;
+        font-size: 0.9375rem;
+      }
+      .card p {
+        margin: 0;
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+      }
+      caption {
+        text-align: left;
+        padding-bottom: 0.5rem;
+        color: var(--muted);
+        font-size: 0.8125rem;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.5rem 0.5rem 0.5rem 0;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        font-weight: 600;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 0.8125rem;
+      }
+      :not(pre) > code {
+        background: var(--code-bg);
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+      pre {
+        margin: 0;
+        padding: 1rem 1.125rem;
+        background: var(--code-bg);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow-x: auto;
+        line-height: 1.55;
+      }
+      ol.rules {
+        margin: 0;
+        padding-left: 1.25rem;
+      }
+      ol.rules li {
+        margin-bottom: 0.5rem;
+      }
+      footer {
+        margin-top: 3.5rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.8125rem;
+      }
+      footer p {
+        margin: 0 0 0.4rem;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        a {
+          transition: color 120ms ease;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <p class="eyebrow">v2 pilot · one requisition · initial screen only</p>
+      <h1>Manually sent, machine-enforced.</h1>
+      <p class="lede">
+        <strong>Ledger</strong> is Rust tooling for the audit-grade candidate feedback pilot in
+        <code>V2.md</code>: 100% of rejected candidates on one high-volume requisition get a
+        human-recorded reason, with no ATS integration and no automated decision.
+      </p>
+
+      <ul class="grid">
+        <li class="card">
+          <h3>Locked form</h3>
+          <p>
+            <code>GATE</code>, <code>FIELD</code>, <code>ADMIN</code> — nothing else. No free
+            text, no “Other”, no “skills mismatch”. A named decision maker and a capture
+            timestamp on every row; corrections supersede, never overwrite.
+          </p>
+        </li>
+        <li class="card">
+          <h3>Immutable log</h3>
+          <p>
+            Every send carries the full rendered body and its hash, chained to the previous
+            line. Edits and truncation are detected before the next send.
+          </p>
+        </li>
+        <li class="card">
+          <h3>Three circuit-breakers</h3>
+          <p>
+            Completeness, gate consistency, and version resolution. A form answer that
+            contradicts the candidate’s own ATS answer blocks the send and escalates — it is
+            never auto-corrected.
           </p>
         </li>
       </ul>
@@ -297,9 +693,9 @@ ledger metrics        --data pilot --requisition REQ-2026-014</code></pre>
 
       <footer>
         <p>
-          The tool renders the exact text, applies the gate-blocking rule, and records the send.
-          It never sends email and never calls the ATS — per the pilot’s scope, dispatch stays
-          manual.
+          The tool renders the exact text, applies the three circuit-breakers, and records the
+          send. It never sends email and never calls the ATS — per the pilot’s scope, dispatch
+          stays manual.
         </p>
         <p>Source: <a href="https://github.com/VasanthSaravanann/Ledger">github.com/VasanthSaravanann/Ledger</a></p>
       </footer>

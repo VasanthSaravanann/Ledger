@@ -107,6 +107,98 @@ label_id!(
     "application id"
 );
 
+label_id!(
+    /// Identifies the named person who made the adverse-action call.
+    DecisionMakerId,
+    "decision maker id"
+);
+label_id!(
+    /// Identifies the coordinator who performed the second-person QA check.
+    QaId,
+    "qa id"
+);
+label_id!(
+    /// The stable id of a captured disposition record, for `SUPERSEDES` links.
+    DispositionId,
+    "disposition id"
+);
+label_id!(
+    /// The stable id of a send-log entry.
+    SendId,
+    "send id"
+);
+
+/// An immutable `TEXT_VERSION` tag such as `v1.0` or `v1.11`.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct TextVersion(String);
+
+impl TextVersion {
+    /// Validates `v<major>.<minor>`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Invalid`] for any other shape, so a version can never be
+    /// blank or a free-text note.
+    pub fn parse(value: &str) -> Result<Self> {
+        let trimmed = value.trim();
+        let Some(rest) = trimmed.strip_prefix('v') else {
+            return Err(Error::invalid("text version", "must look like v1.0"));
+        };
+        let (major, minor) = rest
+            .split_once('.')
+            .ok_or_else(|| Error::invalid("text version", "must look like v1.0"))?;
+        let numeric = |part: &str| {
+            !part.is_empty()
+                && part.len() <= 4
+                && part.chars().all(|character| character.is_ascii_digit())
+        };
+        if !numeric(major) || !numeric(minor) {
+            return Err(Error::invalid("text version", "must look like v1.0"));
+        }
+        Ok(Self(format!("v{major}.{minor}")))
+    }
+
+    /// The tag as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for TextVersion {
+    type Error = Error;
+
+    fn try_from(value: String) -> Result<Self> {
+        Self::parse(&value)
+    }
+}
+
+impl FromStr for TextVersion {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        Self::parse(value)
+    }
+}
+
+impl From<TextVersion> for String {
+    fn from(version: TextVersion) -> Self {
+        version.0
+    }
+}
+
+impl fmt::Display for TextVersion {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl fmt::Debug for TextVersion {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "TextVersion({:?})", self.0)
+    }
+}
+
 /// A candidate email address, used as the merge recipient.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -240,24 +332,33 @@ impl fmt::Debug for Mailbox {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TemplateKind {
-    /// Tier 0: the candidate failed a stated, deterministic gate.
-    FailedGate,
-    /// Tier 2: the candidate met the bar and a stronger field was appointed.
-    Comparative,
-    /// The requisition was withdrawn, changed, or filled internally.
-    Administrative,
+    /// Template A: the `GATE` disposition.
+    Gate,
+    /// Template B: the `FIELD` disposition.
+    Field,
+    /// Template C: the `ADMIN` disposition.
+    Admin,
 }
 
 impl TemplateKind {
     /// Every template the pilot needs.
-    pub const ALL: [Self; 3] = [Self::FailedGate, Self::Comparative, Self::Administrative];
+    pub const ALL: [Self; 3] = [Self::Gate, Self::Field, Self::Admin];
 
     /// The stable code used in storage and on the command line.
     pub fn code(self) -> &'static str {
         match self {
-            Self::FailedGate => "failed-gate",
-            Self::Comparative => "comparative",
-            Self::Administrative => "administrative",
+            Self::Gate => "gate",
+            Self::Field => "field",
+            Self::Admin => "admin",
+        }
+    }
+
+    /// The plan's `Template A` / `B` / `C` letter.
+    pub fn letter(self) -> &'static str {
+        match self {
+            Self::Gate => "A",
+            Self::Field => "B",
+            Self::Admin => "C",
         }
     }
 }
@@ -273,12 +374,12 @@ impl FromStr for TemplateKind {
 
     fn from_str(value: &str) -> Result<Self> {
         match value.trim().to_lowercase().as_str() {
-            "failed-gate" | "gate" => Ok(Self::FailedGate),
-            "comparative" | "stronger-field" => Ok(Self::Comparative),
-            "administrative" | "admin" => Ok(Self::Administrative),
+            "gate" | "a" | "failed-gate" => Ok(Self::Gate),
+            "field" | "b" | "comparative" => Ok(Self::Field),
+            "admin" | "c" | "administrative" => Ok(Self::Admin),
             other => Err(Error::invalid(
                 "template kind",
-                format!("expected failed-gate, comparative or administrative, got {other:?}"),
+                format!("expected gate, field or admin, got {other:?}"),
             )),
         }
     }
@@ -347,12 +448,36 @@ mod tests {
     }
 
     #[test]
+    fn text_versions_are_strictly_shaped() {
+        assert_eq!(
+            TextVersion::parse(" v1.0 ").expect("valid").as_str(),
+            "v1.0"
+        );
+        assert_eq!(
+            TextVersion::parse("v1.11").expect("valid").as_str(),
+            "v1.11"
+        );
+        for bad in ["1.0", "v1", "v1.", "v.1", "v1.a", "v1.0-beta", ""] {
+            assert!(TextVersion::parse(bad).is_err(), "{bad:?} must be rejected");
+        }
+        assert!(
+            TextVersion::parse("v1.1").expect("valid") > TextVersion::parse("v1.0").expect("valid")
+        );
+    }
+
+    #[test]
     fn template_kind_round_trips_through_its_code() {
         for kind in TemplateKind::ALL {
             assert_eq!(
                 TemplateKind::from_str(kind.code()).expect("parses its own code"),
                 kind
             );
+            assert_eq!(
+                TemplateKind::from_str(kind.letter()).expect("parses its letter"),
+                kind
+            );
         }
+        assert_eq!(TemplateKind::Gate.letter(), "A");
+        assert_eq!(TemplateKind::Admin.letter(), "C");
     }
 }

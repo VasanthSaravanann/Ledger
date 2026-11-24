@@ -1,51 +1,235 @@
-//! Requisitions, their static comparative paragraph, and readiness.
+//! Requisitions, their documented facts, and the linted comparative paragraph.
+//!
+//! V2 moves the gate copy's variables onto the requisition: `GATE-02` needs the
+//! role's end date or minimum term, `GATE-03` needs a regulator URL, `GATE-04`
+//! needs an inherent-requirement justification, and `GATE-05` needs the location
+//! and waiver text — all documented *before* the requisition posts. A gate whose
+//! facts are missing is unavailable, and the disposition must fall back to `FIELD`.
+//!
+//! The comparative paragraph is elicited from the Hiring Manager through four
+//! questions and is rejected at sign-off when it contains a relative-superiority
+//! claim, an implied deficit, a subjective proxy, or a years-of-experience bar.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::approval::{Approval, SignOffRole};
 use crate::error::{Error, Result};
-use crate::gate::{GateKind, GateLibrary};
-use crate::id::{Mailbox, RequisitionId};
+use crate::gate::{FactKey, GateKind, GateLibrary};
+use crate::id::{Mailbox, RequisitionId, TextVersion};
 use crate::text;
 
-/// Longest comparative paragraph the pilot accepts.
-const MAX_COMPARATIVE_CHARS: usize = 1_500;
-
-/// The single static paragraph describing what a competitive application looked
-/// like (Task 2.3).
-///
-/// It is deliberately text without merge slots: the same paragraph goes to every
-/// candidate in the "met the bar, stronger field" bucket.
+/// The named human who signs the email, as `{{SENDER_NAME}}` / `{{SENDER_TITLE}}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ComparativeParagraph {
-    /// The approved wording.
-    pub text: String,
+pub struct Sender {
+    /// The sender's name.
+    pub name: String,
+    /// The sender's title.
+    pub title: String,
+}
+
+impl Sender {
+    /// Builds a sender, rejecting a blank name or title.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Invalid`] for blank or over-long values.
+    pub fn try_new(name: impl Into<String>, title: impl Into<String>) -> Result<Self> {
+        Ok(Self {
+            name: text::required("sender name", name.into(), 120)?,
+            title: text::required("sender title", title.into(), 120)?,
+        })
+    }
+}
+
+/// One lint finding on a comparative paragraph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LintIssue {
+    /// The rule that fired.
+    pub rule: &'static str,
+    /// The phrase that triggered it.
+    pub phrase: String,
+}
+
+impl std::fmt::Display for LintIssue {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}: {:?}", self.rule, self.phrase)
+    }
+}
+
+/// Banned phrasing, grouped by the audit rule it breaks.
+const BANNED: [(&str, &[&str]); 4] = [
+    (
+        "relative superiority claim",
+        &[
+            "more experience than",
+            "stronger than most",
+            "better than most",
+            "more than most",
+            "more of the following",
+            "stronger field",
+            "outperformed",
+            "best candidate",
+        ],
+    ),
+    (
+        "implied candidate deficit",
+        &[
+            "lacked",
+            "typically lacked",
+            "missing",
+            "failed to show",
+            "did not have",
+            "weak",
+            "poor",
+        ],
+    ),
+    (
+        "subjective proxy",
+        &[
+            "cultural fit",
+            "right attitude",
+            "team player",
+            "personality",
+            "vibe",
+        ],
+    ),
+    (
+        "years-of-experience bar",
+        &[
+            "years of experience",
+            "years' experience",
+            "years experience",
+            "years of relevant experience",
+        ],
+    ),
+];
+
+/// The static role-level paragraph for the `FIELD` disposition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Comparative {
+    /// `{{ATTRIBUTE_1}}`.
+    pub attribute_1: String,
+    /// `{{ATTRIBUTE_2}}`.
+    pub attribute_2: String,
+    /// `{{ATTRIBUTE_3}}`.
+    pub attribute_3: String,
+    /// `{{EVIDENCE_PATTERN}}`.
+    pub evidence_pattern: String,
+    /// `{{NON_FACTORS}}`.
+    pub non_factors: String,
+    /// Immutable version of this wording.
+    pub version: TextVersion,
     /// Sign-off for this wording.
     pub approval: Approval,
 }
 
-impl ComparativeParagraph {
-    /// Builds an unsigned paragraph.
+impl Comparative {
+    /// Builds the paragraph from the Hiring Manager's elicited answers.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Invalid`] when the text is blank, too long, or contains a
-    /// merge slot (which would let a recruiter tailor it per candidate).
-    pub fn try_new(text: impl Into<String>) -> Result<Self> {
-        let text = text::required("comparative paragraph", text.into(), MAX_COMPARATIVE_CHARS)?;
-        if text.contains("{{") {
-            return Err(Error::invalid(
-                "comparative paragraph",
-                "must be static copy and must not contain merge slots",
-            ));
-        }
-        Ok(Self {
-            text,
+    /// Returns [`Error::Invalid`] for a blank or over-long answer, and
+    /// [`Error::ComparativeRejected`] when the wording fails the lint.
+    pub fn try_new(
+        attributes: [String; 3],
+        evidence_pattern: impl Into<String>,
+        non_factors: impl Into<String>,
+        version: TextVersion,
+    ) -> Result<Self> {
+        let [attribute_1, attribute_2, attribute_3] = attributes;
+        let comparative = Self {
+            attribute_1: text::required("attribute 1", attribute_1, 200)?,
+            attribute_2: text::required("attribute 2", attribute_2, 200)?,
+            attribute_3: text::required("attribute 3", attribute_3, 200)?,
+            evidence_pattern: text::required("evidence pattern", evidence_pattern.into(), 400)?,
+            non_factors: text::required("non-factors", non_factors.into(), 400)?,
+            version,
             approval: Approval::default(),
-        })
+        };
+        let issues = comparative.lint();
+        if !issues.is_empty() {
+            let joined = issues
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<String>>()
+                .join("; ");
+            return Err(Error::ComparativeRejected { issues: joined });
+        }
+        Ok(comparative)
+    }
+
+    /// The rendered `{{ROLE_LEVEL_PARAGRAPH}}`.
+    pub fn text(&self) -> String {
+        format!(
+            "Shortlisted applicants demonstrated {}, {}, and {}. The clearest evidence was {}. \
+             Applicants did not need {} to be considered.",
+            self.attribute_1,
+            self.attribute_2,
+            self.attribute_3,
+            self.evidence_pattern,
+            self.non_factors
+        )
+    }
+
+    /// Every lint finding on the rendered paragraph.
+    pub fn lint(&self) -> Vec<LintIssue> {
+        let text = self.text().to_lowercase();
+        let mut issues = Vec::new();
+        for (rule, phrases) in BANNED {
+            for phrase in phrases {
+                if text.contains(phrase) {
+                    issues.push(LintIssue {
+                        rule,
+                        phrase: (*phrase).to_owned(),
+                    });
+                }
+            }
+        }
+        if has_years_bar(&text) {
+            issues.push(LintIssue {
+                rule: "years-of-experience bar",
+                phrase: "a numeric years requirement".to_owned(),
+            });
+        }
+        issues
+    }
+}
+
+/// Whether the text states a numeric years bar, for example "3 years".
+fn has_years_bar(lowered: &str) -> bool {
+    let bytes = lowered.as_bytes();
+    let mut from = 0;
+    while let Some(found) = lowered[from..].find("year") {
+        let at = from + found;
+        let window_start = at.saturating_sub(12);
+        if bytes[window_start..at].iter().any(u8::is_ascii_digit) {
+            return true;
+        }
+        from = at + 4;
+    }
+    false
+}
+
+/// Whether a gate can be used on this requisition, and why not.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GateAvailability {
+    /// The gate is screened on and its facts are documented.
+    Available,
+    /// The gate is screened on but its facts are not documented yet.
+    MissingFacts {
+        /// The facts still missing.
+        missing: Vec<FactKey>,
+    },
+}
+
+impl GateAvailability {
+    /// Whether the gate can carry a `GATE` disposition.
+    pub fn is_available(&self) -> bool {
+        matches!(self, Self::Available)
     }
 }
 
@@ -54,20 +238,43 @@ impl ComparativeParagraph {
 pub struct Requisition {
     /// The requisition's ATS id.
     pub id: RequisitionId,
-    /// The pilot employer, as it should appear in an email.
+    /// The pilot employer.
     pub employer: String,
     /// The advertised role title.
     pub title: String,
-    /// The monitored reply mailbox candidates reach a human on.
+    /// The monitored reply-to mailbox.
     pub reply_to: Mailbox,
+    /// The named human who signs the emails.
+    pub sender: Sender,
     /// The knockout gates this requisition screens on.
     pub gates: Vec<GateKind>,
-    /// The static comparative paragraph, once drafted.
-    pub comparative: Option<ComparativeParagraph>,
+    /// Facts the gate blocks need, documented before the requisition posts.
+    pub facts: BTreeMap<FactKey, String>,
+    /// The static comparative paragraph, once elicited.
+    pub comparative: Option<Comparative>,
     /// Hiring-manager and legal sign-off for the requisition's static copy.
     pub approval: Approval,
     /// When the requisition was created.
     pub created_at: DateTime<Utc>,
+}
+
+/// The fields a requisition is created from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequisitionDraft {
+    /// The ATS requisition id.
+    pub id: RequisitionId,
+    /// The employer.
+    pub employer: String,
+    /// The role title.
+    pub title: String,
+    /// The monitored reply-to mailbox.
+    pub reply_to: Mailbox,
+    /// The named sender.
+    pub sender: Sender,
+    /// The knockout gates.
+    pub gates: Vec<GateKind>,
+    /// Facts documented before posting.
+    pub facts: BTreeMap<FactKey, String>,
 }
 
 impl Requisition {
@@ -75,46 +282,99 @@ impl Requisition {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Invalid`] when a field is blank, too long, or when `gates`
-    /// is empty.
-    pub fn new(
-        id: RequisitionId,
-        employer: impl Into<String>,
-        title: impl Into<String>,
-        reply_to: Mailbox,
-        gates: impl IntoIterator<Item = GateKind>,
-        created_at: DateTime<Utc>,
-    ) -> Result<Self> {
-        let employer = text::required("employer", employer.into(), 120)?;
-        let title = text::required("role title", title.into(), 120)?;
-        let gates: BTreeSet<GateKind> = gates.into_iter().collect();
-        if gates.is_empty() {
+    /// Returns [`Error::Invalid`] for a blank field, an empty gate list, or a
+    /// malformed regulator URL.
+    pub fn new(draft: RequisitionDraft, created_at: DateTime<Utc>) -> Result<Self> {
+        let employer = text::required("employer", draft.employer, 120)?;
+        let title = text::required("role title", draft.title, 120)?;
+        let mut unique = Vec::new();
+        for gate in draft.gates {
+            if !unique.contains(&gate) {
+                unique.push(gate);
+            }
+        }
+        unique.sort();
+        if unique.is_empty() {
             return Err(Error::invalid(
                 "requisition gates",
                 "a requisition must screen on at least one gate",
             ));
         }
-        Ok(Self {
-            id,
+        let mut requisition = Self {
+            id: draft.id,
             employer,
             title,
-            reply_to,
-            gates: gates.into_iter().collect(),
+            reply_to: draft.reply_to,
+            sender: draft.sender,
+            gates: unique,
+            facts: BTreeMap::new(),
             comparative: None,
             approval: Approval::default(),
             created_at,
-        })
+        };
+        for (key, value) in draft.facts {
+            requisition.set_fact(key, value)?;
+        }
+        Ok(requisition)
     }
 
-    /// Replaces the comparative paragraph and clears every approval that covered
-    /// the old copy.
+    /// Documents one requisition fact.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Invalid`] when the paragraph is not acceptable.
-    pub fn set_comparative(&mut self, text: impl Into<String>) -> Result<&ComparativeParagraph> {
-        self.comparative = Some(ComparativeParagraph::try_new(text)?);
-        // Changed copy must be re-approved; an old signature does not carry over.
+    /// Returns [`Error::Invalid`] when the value is blank, and when a regulator
+    /// URL is not an `https` URL.
+    pub fn set_fact(&mut self, key: FactKey, value: impl Into<String>) -> Result<()> {
+        let value = text::required("requisition fact", value.into(), 400)?;
+        if key.is_url() && !value.starts_with("https://") {
+            return Err(Error::invalid(
+                "requisition fact",
+                format!("{key} must be an https URL"),
+            ));
+        }
+        self.facts.insert(key, value);
+        Ok(())
+    }
+
+    /// Whether `gate` can carry a `GATE` disposition.
+    pub fn availability(&self, library: &GateLibrary, gate: GateKind) -> GateAvailability {
+        if !self.gates.contains(&gate) {
+            return GateAvailability::Available;
+        }
+        let missing = library.missing_facts(gate, &self.facts);
+        if missing.is_empty() {
+            GateAvailability::Available
+        } else {
+            GateAvailability::MissingFacts { missing }
+        }
+    }
+
+    /// Every gate this requisition screens on, with its availability.
+    pub fn availability_report(&self, library: &GateLibrary) -> Vec<(GateKind, GateAvailability)> {
+        self.gates
+            .iter()
+            .map(|gate| (*gate, self.availability(library, *gate)))
+            .collect()
+    }
+
+    /// Replaces the comparative paragraph, clearing every approval it covered.
+    ///
+    /// # Errors
+    ///
+    /// Propagates [`Comparative::try_new`] errors.
+    pub fn set_comparative(
+        &mut self,
+        attributes: [String; 3],
+        evidence_pattern: impl Into<String>,
+        non_factors: impl Into<String>,
+        version: TextVersion,
+    ) -> Result<&Comparative> {
+        self.comparative = Some(Comparative::try_new(
+            attributes,
+            evidence_pattern,
+            non_factors,
+            version,
+        )?);
         self.approval = Approval::default();
         self.comparative
             .as_ref()
@@ -136,12 +396,14 @@ impl Requisition {
         Ok(())
     }
 
-    /// Records a single-pass signature on the comparative paragraph.
+    /// Records a single-pass signature on the comparative paragraph, refusing
+    /// wording that fails the audit lint.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Invalid`] when no paragraph has been drafted, and
-    /// propagates [`Approval::record`] errors.
+    /// Returns [`Error::Invalid`] when no paragraph has been elicited,
+    /// [`Error::ComparativeRejected`] when the lint fails, and propagates
+    /// [`Approval::record`] errors.
     pub fn approve_comparative(
         &mut self,
         actor: impl Into<String>,
@@ -151,9 +413,19 @@ impl Requisition {
         let paragraph = self.comparative.as_mut().ok_or_else(|| {
             Error::invalid(
                 "comparative paragraph",
-                "draft the paragraph before collecting sign-off",
+                "elicit the paragraph before collecting sign-off",
             )
         })?;
+        let issues = paragraph.lint();
+        if !issues.is_empty() {
+            return Err(Error::ComparativeRejected {
+                issues: issues
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>()
+                    .join("; "),
+            });
+        }
         paragraph.approval.record(actor, role, at)?;
         Ok(())
     }
@@ -161,11 +433,6 @@ impl Requisition {
     /// Everything that still blocks dispatch, in the order it should be fixed.
     pub fn blocking_issues(&self, library: &GateLibrary) -> Vec<String> {
         let mut issues = Vec::new();
-        for gate in &self.gates {
-            if library.copy_for(*gate).is_none() {
-                issues.push(format!("no approved gate copy for {gate}"));
-            }
-        }
         if !library.is_approved() {
             let missing: Vec<String> = library
                 .approval
@@ -182,6 +449,17 @@ impl Requisition {
                 issues.push("gate copy library is incomplete".to_owned());
             }
         }
+        for (gate, availability) in self.availability_report(library) {
+            if let GateAvailability::MissingFacts { missing } = availability {
+                let names: Vec<String> = missing.iter().map(ToString::to_string).collect();
+                issues.push(format!(
+                    "{gate} ({}) has no documented facts ({}); GATE dispositions must be \
+                     recorded as FIELD until they are set",
+                    gate.label(),
+                    names.join(", ")
+                ));
+            }
+        }
         let missing = self.approval.missing();
         if !missing.is_empty() {
             let roles: Vec<String> = missing.iter().map(ToString::to_string).collect();
@@ -191,20 +469,31 @@ impl Requisition {
             ));
         }
         match &self.comparative {
-            None => issues.push("comparative paragraph is not drafted".to_owned()),
-            Some(paragraph) if !paragraph.approval.is_approved() => {
-                let roles: Vec<String> = paragraph
-                    .approval
-                    .missing()
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect();
-                issues.push(format!(
-                    "comparative paragraph still needs sign-off from {}",
-                    roles.join(", ")
-                ));
+            None => issues.push("comparative paragraph is not elicited".to_owned()),
+            Some(paragraph) => {
+                let lint = paragraph.lint();
+                if !lint.is_empty() {
+                    issues.push(format!(
+                        "comparative paragraph fails the audit lint: {}",
+                        lint.iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<String>>()
+                            .join("; ")
+                    ));
+                }
+                if !paragraph.approval.is_approved() {
+                    let roles: Vec<String> = paragraph
+                        .approval
+                        .missing()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect();
+                    issues.push(format!(
+                        "comparative paragraph still needs sign-off from {}",
+                        roles.join(", ")
+                    ));
+                }
             }
-            Some(_) => {}
         }
         issues
     }
@@ -229,7 +518,7 @@ impl RequisitionBook {
     ///
     /// Returns [`Error::Invalid`] when the id is already in the book.
     pub fn insert(&mut self, requisition: Requisition) -> Result<()> {
-        if self.items.iter().any(|item| item.id == requisition.id) {
+        if self.get(&requisition.id).is_some() {
             return Err(Error::invalid(
                 "requisition id",
                 format!("{} is already in the book", requisition.id),
@@ -273,82 +562,171 @@ impl RequisitionBook {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gate::{FactKey, GateKind};
     use chrono::TimeZone;
 
     fn at() -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 11, 1, 9, 0, 0)
+        Utc.with_ymd_and_hms(2026, 11, 24, 9, 0, 0)
             .single()
-            .expect("valid timestamp")
+            .expect("timestamp")
+    }
+
+    fn version() -> TextVersion {
+        TextVersion::parse("v1.0").expect("version")
+    }
+
+    fn facts() -> BTreeMap<FactKey, String> {
+        BTreeMap::from([
+            (FactKey::RoleEndOrMinTerm, "30 June 2027".to_owned()),
+            (FactKey::MinTerm, "12 months".to_owned()),
+            (
+                FactKey::RoleDurationReason,
+                "The appointment is fixed-term.".to_owned(),
+            ),
+            (FactKey::RegulatorUrl, "https://www.ahpra.gov.au".to_owned()),
+            (
+                FactKey::InherentRequirementReason,
+                "the role requires unaccompanied multi-site travel".to_owned(),
+            ),
+            (
+                FactKey::LocationRequirement,
+                "the Townsville site".to_owned(),
+            ),
+            (
+                FactKey::LocationSatisfactionText,
+                "residence within 45 minutes of the site".to_owned(),
+            ),
+            (
+                FactKey::WaiverText,
+                "relocation within 90 days of the start date".to_owned(),
+            ),
+        ])
     }
 
     fn requisition() -> Requisition {
         Requisition::new(
-            RequisitionId::try_from("REQ-1").expect("id"),
-            "Example Health",
-            "Registered Nurse",
-            Mailbox::try_from("careers-feedback@example.com.au").expect("mailbox"),
-            [GateKind::RightToWork, GateKind::MandatoryRegistration],
+            RequisitionDraft {
+                id: RequisitionId::try_from("REQ-1").expect("id"),
+                employer: "Example Health".to_owned(),
+                title: "Registered Nurse".to_owned(),
+                reply_to: Mailbox::try_from("careers-feedback@example.com.au").expect("mailbox"),
+                sender: Sender::try_new("R. Patel", "Recruitment Coordinator").expect("sender"),
+                gates: vec![GateKind::RightToWork, GateKind::MandatoryRegistration],
+                facts: facts(),
+            },
             at(),
         )
-        .expect("valid requisition")
+        .expect("requisition")
+    }
+
+    fn good_comparative(req: &mut Requisition) -> Comparative {
+        req.set_comparative(
+            [
+                "assessment of deteriorating patients".to_owned(),
+                "escalation to a registrar within their first hour".to_owned(),
+                "documentation that a covering clinician could act on".to_owned(),
+            ],
+            "a de-identified case note attached to the application",
+            "a post-graduate qualification or a specific employer",
+            version(),
+        )
+        .expect("comparative")
+        .clone()
     }
 
     #[test]
-    fn requires_at_least_one_gate() {
+    fn lint_rejects_relative_superiority_and_proxies() {
+        let mut req = requisition();
+        for banned in [
+            "more experience than other applicants",
+            "cultural fit with the team",
+            "candidates typically lacked depth",
+        ] {
+            let result = req.set_comparative(
+                [
+                    banned.to_owned(),
+                    "escalation within an hour".to_owned(),
+                    "clear documentation".to_owned(),
+                ],
+                "a case note",
+                "a post-graduate qualification",
+                version(),
+            );
+            assert!(
+                matches!(result, Err(Error::ComparativeRejected { .. })),
+                "{banned:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn lint_rejects_a_numeric_years_bar() {
+        let mut req = requisition();
+        let result = req.set_comparative(
+            [
+                "at least 3 years in acute care".to_owned(),
+                "escalation within an hour".to_owned(),
+                "clear documentation".to_owned(),
+            ],
+            "a case note",
+            "a post-graduate qualification",
+            version(),
+        );
+        assert!(matches!(result, Err(Error::ComparativeRejected { .. })));
+    }
+
+    #[test]
+    fn a_regulator_fact_must_be_an_https_url() {
+        let mut req = requisition();
         assert!(
-            Requisition::new(
-                RequisitionId::try_from("REQ-1").expect("id"),
-                "Example Health",
-                "Registered Nurse",
-                Mailbox::try_from("careers@example.com.au").expect("mailbox"),
-                [],
-                at(),
-            )
-            .is_err()
+            req.set_fact(FactKey::RegulatorUrl, "http://www.ahpra.gov.au")
+                .is_err()
+        );
+        req.set_fact(FactKey::RegulatorUrl, "https://www.ahpra.gov.au")
+            .expect("https is accepted");
+    }
+
+    #[test]
+    fn a_gate_without_facts_is_unavailable() {
+        let library = GateLibrary::seed();
+        let mut req = requisition();
+        assert_eq!(
+            req.availability(&library, GateKind::MandatoryRegistration),
+            GateAvailability::Available
+        );
+        req.facts.remove(&FactKey::RegulatorUrl);
+        assert_eq!(
+            req.availability(&library, GateKind::MandatoryRegistration),
+            GateAvailability::MissingFacts {
+                missing: vec![FactKey::RegulatorUrl]
+            }
+        );
+        assert!(
+            req.blocking_issues(&library)
+                .iter()
+                .any(|issue| issue.contains("must be recorded as FIELD"))
         );
     }
 
     #[test]
-    fn duplicate_gates_are_collapsed() {
-        let req = Requisition::new(
-            RequisitionId::try_from("REQ-1").expect("id"),
-            "Example Health",
-            "Registered Nurse",
-            Mailbox::try_from("careers@example.com.au").expect("mailbox"),
-            [GateKind::Location, GateKind::Location],
-            at(),
-        )
-        .expect("valid requisition");
-        assert_eq!(req.gates, vec![GateKind::Location]);
-    }
-
-    fn approved_library() -> GateLibrary {
-        let mut library = GateLibrary::seed();
-        for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
+    fn readiness_needs_approved_library_and_both_signatures() {
+        let library = {
+            let mut library = GateLibrary::seed();
+            for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
+                library
+                    .approve("Approver", role, at())
+                    .expect("library sign-off");
+            }
             library
-                .approve("Approver", role, at())
-                .expect("library sign-off");
-        }
-        library
-    }
-
-    #[test]
-    fn readiness_needs_an_approved_library_and_both_signatures() {
-        let library = approved_library();
+        };
         let mut req = requisition();
-        assert!(!req.blocking_issues(&library).is_empty());
-
-        req.set_comparative("Shortlisted applicants had three years of acute care.")
-            .expect("paragraph");
-        req.approve("J. Chen", SignOffRole::HiringManager, at())
-            .expect("hm signature");
-        req.approve("M. Okafor", SignOffRole::Legal, at())
-            .expect("legal signature");
-        req.approve_comparative("J. Chen", SignOffRole::HiringManager, at())
-            .expect("hm signature");
-        req.approve_comparative("M. Okafor", SignOffRole::Legal, at())
-            .expect("legal signature");
-
+        assert!(!req.is_ready(&library));
+        good_comparative(&mut req);
+        for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
+            req.approve("J. Chen", role, at()).expect("sign-off");
+            req.approve_comparative("J. Chen", role, at())
+                .expect("sign-off");
+        }
         assert!(
             req.is_ready(&library),
             "{:?}",
@@ -357,24 +735,25 @@ mod tests {
     }
 
     #[test]
-    fn changing_the_comparative_paragraph_voids_approval() {
-        let library = GateLibrary::seed();
+    fn changing_the_paragraph_voids_approval() {
         let mut req = requisition();
-        req.set_comparative("First wording.").expect("paragraph");
-        req.approve("J. Chen", SignOffRole::HiringManager, at())
-            .expect("hm signature");
-        req.approve("M. Okafor", SignOffRole::Legal, at())
-            .expect("legal signature");
+        good_comparative(&mut req);
+        for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
+            req.approve("J. Chen", role, at()).expect("sign-off");
+            req.approve_comparative("J. Chen", role, at())
+                .expect("sign-off");
+        }
         assert!(req.approval.is_approved());
+        assert!(
+            req.comparative
+                .as_ref()
+                .expect("paragraph")
+                .approval
+                .is_approved()
+        );
 
-        req.set_comparative("Second wording.")
-            .expect("second paragraph");
+        good_comparative(&mut req);
         assert!(!req.approval.is_approved());
-        assert!(!req.is_ready(&library));
-    }
-
-    #[test]
-    fn comparative_paragraph_rejects_merge_slots() {
-        assert!(ComparativeParagraph::try_new("Dear {{candidate_name}},").is_err());
+        assert!(!req.comparative.expect("paragraph").approval.is_approved());
     }
 }
