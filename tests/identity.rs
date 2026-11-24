@@ -197,3 +197,76 @@ fn bootstrapping_needs_no_identity_but_everything_else_does() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn editing_approved_copy_blocks_dispatch_until_reapproved() {
+    let (store, dir) = fixture("drift");
+
+    // Contract: the fixture is ready, and every sign-off verifies.
+    let ready = ledger(
+        &store,
+        "qa-patel",
+        &["dispatch", "--requisition", REQUISITION, "--preview"],
+    );
+    assert!(ready.status.success(), "{}", stderr(&ready));
+
+    // The approver edits one block, which is a new copy.
+    let bumped = ledger(
+        &store,
+        "j-chen",
+        &[
+            "gate",
+            "bump-version",
+            "--gate",
+            "GATE-04",
+            "--version",
+            "v1.1",
+        ],
+    );
+    assert!(bumped.status.success(), "{}", stderr(&bumped));
+
+    // Signatures are still cryptographically valid, but no longer cover the copy.
+    let verified = ledger(&store, "aud-bell", &["verify-signatures"]);
+    assert_eq!(verified.status.code(), Some(3), "{}", stderr(&verified));
+    let stdout = String::from_utf8_lossy(&verified.stdout);
+    assert!(stdout.contains("STALE"), "{stdout}");
+    assert!(
+        stdout.contains("signed records:"),
+        "the human summary reports the verified count: {stdout}"
+    );
+
+    // Dispatch refuses, and says which role signed the previous copy.
+    let blocked = ledger(
+        &store,
+        "qa-patel",
+        &["dispatch", "--requisition", REQUISITION, "--preview"],
+    );
+    assert_eq!(blocked.status.code(), Some(3));
+    assert!(stderr(&blocked).contains("copy changed after hiring-manager signed"));
+
+    // Re-approving the new copy restores dispatch.
+    for (actor, role, operator) in [
+        ("J. Chen", "hiring-manager", "j-chen"),
+        ("M. Okafor", "legal", "m-okafor"),
+    ] {
+        let approved = ledger(
+            &store,
+            operator,
+            &["gate", "approve", "--actor", actor, "--role", role],
+        );
+        assert!(approved.status.success(), "{}", stderr(&approved));
+    }
+    let reapproved = ledger(
+        &store,
+        "qa-patel",
+        &["dispatch", "--requisition", REQUISITION, "--preview"],
+    );
+    assert!(reapproved.status.success(), "{}", stderr(&reapproved));
+    assert!(
+        ledger(&store, "aud-bell", &["verify-signatures"])
+            .status
+            .success()
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}

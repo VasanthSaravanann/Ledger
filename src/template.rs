@@ -104,6 +104,19 @@ pub struct EmailTemplate {
 }
 
 impl EmailTemplate {
+    /// The SHA-256 of the template's copy, excluding its approval.
+    pub fn content_hash(&self) -> String {
+        let projection = serde_json::json!({
+            "kind": self.kind.code(),
+            "version": self.version.as_str(),
+            "subject": self.subject,
+            "body": self.body,
+        });
+        serde_json::to_vec(&projection)
+            .map(|bytes| crate::digest::sha256_hex(&bytes))
+            .unwrap_or_default()
+    }
+
     /// Validates and builds a template.
     ///
     /// # Errors
@@ -293,7 +306,32 @@ Regards,
                 .iter_mut()
                 .find(|item| item.kind == kind)
                 .ok_or(Error::MissingTemplate(kind))?;
-            template.approval.record(actor.trim(), role, at)?;
+            let hash = template.content_hash();
+            template.approval.record(actor.trim(), role, at, hash)?;
+        }
+        Ok(())
+    }
+
+    /// Attaches an operator signature to every template's sign-off for `role`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::MissingTemplate`] for an absent kind, and propagates
+    /// signature errors.
+    pub fn sign_all(
+        &mut self,
+        registry: &crate::identity::Registry,
+        store: &crate::store::Store,
+        role: SignOffRole,
+        operator: &str,
+    ) -> Result<()> {
+        for kind in TemplateKind::ALL {
+            let template = self
+                .items
+                .iter_mut()
+                .find(|item| item.kind == kind)
+                .ok_or(Error::MissingTemplate(kind))?;
+            template.approval.sign(role, registry, store, operator)?;
         }
         Ok(())
     }
@@ -302,7 +340,7 @@ Regards,
     pub fn is_approved(&self) -> bool {
         TemplateKind::ALL.into_iter().all(|kind| {
             self.require(kind)
-                .is_ok_and(|item| item.approval.is_approved())
+                .is_ok_and(|item| item.approval.is_bound_to(&item.content_hash()))
         })
     }
 

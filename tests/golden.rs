@@ -26,7 +26,7 @@ const DISPOSITIONS_SHA256: &str =
     "147f6b2b00f026f1ed873a31011e3a5b86303cd556d0e6e4bd49ca38e10b5888";
 
 /// SHA-256 over every workspace file except `demo-summary.json`.
-const FINGERPRINT: &str = "1032f2595a08b08be0e834885a66c90a2a141119ab012daf9f2eb6bda80f0a39";
+const FINGERPRINT: &str = "64f9e1f9e8b4b9ce30c38f2f7c82c904906e5c4c2d9d23caf5eca6df73833ca2";
 
 const SENDS: usize = 147;
 const BLOCKED: usize = 3;

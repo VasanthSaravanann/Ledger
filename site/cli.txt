@@ -230,7 +230,8 @@ Options:
       --debug-ids                  Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
       --preview                    Render and report without writing either log
       --operator <NAME>            The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
-      --status <STATUS>            DELIVERY_STATUS to record: queued, sent, or failed [default: sent]
+      --status <STATUS>            DELIVERY_STATUS to record. Defaults to `queued` when --eml is used, else `sent`
+      --eml <DIR>                  Write one RFC 5322 draft per send into this directory, plus a manifest
       --export-html <DIR>          Write the build-time artefact pages into this directory
       --json                       Print the run as JSON
       --allow-blocked              Exit 0 even when attempts were blocked (exit 2 is the default for a commit)

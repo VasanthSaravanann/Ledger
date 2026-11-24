@@ -276,7 +276,8 @@ Options:
       --debug-ids                  Reveal raw application ids and emails in console output (they are redacted to stable #hash handles by default)
       --preview                    Render and report without writing either log
       --operator &lt;NAME&gt;            The operator acting. Defaults to LEDGER_OPERATOR, then the only registered operator
-      --status &lt;STATUS&gt;            DELIVERY_STATUS to record: queued, sent, or failed [default: sent]
+      --status &lt;STATUS&gt;            DELIVERY_STATUS to record. Defaults to `queued` when --eml is used, else `sent`
+      --eml &lt;DIR&gt;                  Write one RFC 5322 draft per send into this directory, plus a manifest
       --export-html &lt;DIR&gt;          Write the build-time artefact pages into this directory
       --json                       Print the run as JSON
       --allow-blocked              Exit 0 even when attempts were blocked (exit 2 is the default for a commit)
@@ -428,7 +429,7 @@ Options:
   -h, --help             Print help
 
 </pre>
-<footer><p class="mono">build c7cc82d · generated 2026-11-24T19:37:12+11:00 · fixture #1032f2595a08…</p><p>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</p></footer>
+<footer><p class="mono">build 16a1caa · generated 2026-11-24T19:51:58+11:00 · fixture #64f9e1f9e8b4…</p><p>Generated at build time from <code>ledger</code> CLI output. Synthetic fixture — no pilot data yet.</p></footer>
 </div>
 </body>
 </html>

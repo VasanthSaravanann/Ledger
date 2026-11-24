@@ -228,7 +228,9 @@ half in `operators/<name>.key` at `0600`. Dispositions are signed over a canonic
 digest of the record, so a later reader can tell who authorised a decision without
 trusting the file. Signatures live **outside** the send-log digest: the chain proves
 the log is unedited, signatures prove who decided what. `verify_log.py` reports
-"signatures not checked"; `ledger verify-signatures` does that in Rust.
+"signatures not checked"; `ledger verify-signatures` does that in Rust and exits
+`3` on any invalid signature, any stale sign-off, or any unsigned sign-off in a
+registered workspace.
 
 | Role | May run (read-only commands are open to all) |
 | --- | --- |
@@ -239,6 +241,18 @@ the log is unedited, signatures prove who decided what. `verify_log.py` reports
 A workspace with no registry is in bootstrap: only `init`, `demo seed` and
 `operator register` run until someone registers, then every mutating command needs
 a role. Dispatch and `purge` take an automatic snapshot into `backups/` first.
+
+### Drafted dispatch (`.eml`)
+
+```bash
+ledger --operator qa-patel dispatch --data pilot --requisition REQ-2026-014 \
+  --eml pilot/batch --allow-blocked
+```
+
+Writes one RFC 5322 draft per permitted recipient plus `manifest.json` (per-file
+SHA-256 and a batch digest). Every send recorded this way is `queued`, never
+`sent`: a draft is not a delivery, and editing it in Outlook afterwards shows up as
+a manifest mismatch rather than being silently absorbed into the log.
 
 ### Retention, migration and anchoring
 
@@ -316,7 +330,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-115 tests cover: the initial-screen hard filter, the three-variant form, superseding
+129 tests cover: the initial-screen hard filter, the three-variant form, superseding
 corrections, gate unavailability falling back to `FIELD`, the paragraph lint,
 required template slots, QA enforcement, the chain detecting edits and truncation,
 the five metric bands, the routing order, the fixture's determinism and planted

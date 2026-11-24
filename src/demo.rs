@@ -164,14 +164,21 @@ pub fn seed(store: &Store, force: bool, record: bool) -> Result<DemoSummary> {
     policy.set_escalation_sla_hours(24)?;
     policy.save(store)?;
 
-    // Single-pass sign-off of all four static artefacts.
+    // Single-pass sign-off of all four static artefacts, signed by the operator
+    // who holds each role's key.
     let mut library = GateLibrary::seed();
     let mut templates = Templates::seed();
     let mut playbook = Playbook::seed();
-    for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
-        library.approve("J. Chen", role, base)?;
-        templates.approve_all("M. Okafor", role, base)?;
-        playbook.approve("M. Okafor", role, base)?;
+    for (role, actor, operator) in [
+        (SignOffRole::HiringManager, "J. Chen", "j-chen"),
+        (SignOffRole::Legal, "M. Okafor", "m-okafor"),
+    ] {
+        library.approve(actor, role, base)?;
+        library.approval.sign(role, &registry, store, operator)?;
+        templates.approve_all(actor, role, base)?;
+        templates.sign_all(&registry, store, role, operator)?;
+        playbook.approve(actor, role, base)?;
+        playbook.approval.sign(role, &registry, store, operator)?;
     }
     library.save(store)?;
     templates.save(store)?;
@@ -200,9 +207,18 @@ pub fn seed(store: &Store, force: bool, record: bool) -> Result<DemoSummary> {
         "a post-graduate qualification or a specific employer",
         TextVersion::parse("v1.0")?,
     )?;
-    for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
-        requisition.approve("J. Chen", role, base)?;
-        requisition.approve_comparative("M. Okafor", role, base)?;
+    for (role, actor, operator) in [
+        (SignOffRole::HiringManager, "J. Chen", "j-chen"),
+        (SignOffRole::Legal, "M. Okafor", "m-okafor"),
+    ] {
+        requisition.approve(actor, role, base)?;
+        requisition
+            .approval
+            .sign(role, &registry, store, operator)?;
+        requisition.approve_comparative(actor, role, base)?;
+        if let Some(paragraph) = requisition.comparative.as_mut() {
+            paragraph.approval.sign(role, &registry, store, operator)?;
+        }
     }
     let mut book = RequisitionBook::default();
     book.insert(requisition.clone())?;
@@ -329,8 +345,12 @@ pub fn seed(store: &Store, force: bool, record: bool) -> Result<DemoSummary> {
         )?;
         // Failure case 3: bump GATE-02 after dispatch, so one entry stays on v1.0.
         library.bump_version(GateKind::WorkRightsDuration, TextVersion::parse("v1.1")?)?;
-        for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
-            library.approve("J. Chen", role, base + Duration::hours(5))?;
+        for (role, actor, operator) in [
+            (SignOffRole::HiringManager, "J. Chen", "j-chen"),
+            (SignOffRole::Legal, "M. Okafor", "m-okafor"),
+        ] {
+            library.approve(actor, role, base + Duration::hours(5))?;
+            library.approval.sign(role, &registry, store, operator)?;
         }
         library.save(store)?;
         let stale = send_log

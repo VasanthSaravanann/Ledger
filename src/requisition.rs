@@ -127,6 +127,21 @@ pub struct Comparative {
 }
 
 impl Comparative {
+    /// The SHA-256 of the paragraph's copy, excluding its approval.
+    pub fn content_hash(&self) -> String {
+        let projection = serde_json::json!({
+            "attribute_1": self.attribute_1,
+            "attribute_2": self.attribute_2,
+            "attribute_3": self.attribute_3,
+            "evidence_pattern": self.evidence_pattern,
+            "non_factors": self.non_factors,
+            "version": self.version.as_str(),
+        });
+        serde_json::to_vec(&projection)
+            .map(|bytes| crate::digest::sha256_hex(&bytes))
+            .unwrap_or_default()
+    }
+
     /// Builds the paragraph from the Hiring Manager's elicited answers.
     ///
     /// # Errors
@@ -376,13 +391,36 @@ impl Requisition {
             non_factors,
             version,
         )?);
-        self.approval = Approval::default();
+        // The requisition's own copy did not change, so its sign-off stands; the new
+        // paragraph simply starts unsigned.
         self.comparative
             .as_ref()
             .ok_or_else(|| Error::invalid("comparative paragraph", "was not stored"))
     }
 
-    /// Records a single-pass signature on the requisition's static copy.
+    /// The SHA-256 of the requisition's copy, excluding approvals and the
+    /// comparative paragraph (which is approved separately).
+    pub fn content_hash(&self) -> String {
+        let facts: BTreeMap<String, &String> = self
+            .facts
+            .iter()
+            .map(|(key, value)| (key.to_string(), value))
+            .collect();
+        let projection = serde_json::json!({
+            "id": self.id.as_str(),
+            "employer": self.employer,
+            "title": self.title,
+            "reply_to": self.reply_to.as_str(),
+            "sender": { "name": self.sender.name, "title": self.sender.title },
+            "gates": self.gates.iter().map(|gate| gate.code()).collect::<Vec<&str>>(),
+            "facts": facts,
+        });
+        serde_json::to_vec(&projection)
+            .map(|bytes| crate::digest::sha256_hex(&bytes))
+            .unwrap_or_default()
+    }
+
+    /// Records a single-pass signature bound to the current copy.
     ///
     /// # Errors
     ///
@@ -393,7 +431,8 @@ impl Requisition {
         role: SignOffRole,
         at: DateTime<Utc>,
     ) -> Result<()> {
-        self.approval.record(actor, role, at)?;
+        let hash = self.content_hash();
+        self.approval.record(actor, role, at, hash)?;
         Ok(())
     }
 
@@ -427,7 +466,8 @@ impl Requisition {
                     .join("; "),
             });
         }
-        paragraph.approval.record(actor, role, at)?;
+        let hash = paragraph.content_hash();
+        paragraph.approval.record(actor, role, at, hash)?;
         Ok(())
     }
 
@@ -441,14 +481,15 @@ impl Requisition {
                 .iter()
                 .map(ToString::to_string)
                 .collect();
-            if library.is_complete() {
+            if !library.is_complete() {
+                issues.push("gate copy library is incomplete".to_owned());
+            } else if !missing.is_empty() {
                 issues.push(format!(
                     "gate copy library still needs sign-off from {}",
                     missing.join(", ")
                 ));
-            } else {
-                issues.push("gate copy library is incomplete".to_owned());
             }
+            issues.extend(library.approval.drift(&library.content_hash()));
         }
         for (gate, availability) in self.availability_report(library) {
             if let GateAvailability::MissingFacts { missing } = availability {
@@ -461,14 +502,7 @@ impl Requisition {
                 ));
             }
         }
-        let missing = self.approval.missing();
-        if !missing.is_empty() {
-            let roles: Vec<String> = missing.iter().map(ToString::to_string).collect();
-            issues.push(format!(
-                "requisition copy still needs sign-off from {}",
-                roles.join(", ")
-            ));
-        }
+        issues.extend(self.approval.drift(&self.content_hash()));
         match &self.comparative {
             None => issues.push("comparative paragraph is not elicited".to_owned()),
             Some(paragraph) => {
@@ -482,21 +516,15 @@ impl Requisition {
                             .join("; ")
                     ));
                 }
-                if !paragraph.approval.is_approved() {
-                    let roles: Vec<String> = paragraph
-                        .approval
-                        .missing()
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect();
-                    issues.push(format!(
-                        "comparative paragraph still needs sign-off from {}",
-                        roles.join(", ")
-                    ));
-                }
+                issues.extend(paragraph.approval.drift(&paragraph.content_hash()));
             }
         }
         issues
+    }
+
+    /// Whether the requisition's own copy (not the paragraph) is signed as it stands.
+    pub fn is_bound_copy_approved(&self) -> bool {
+        self.approval.is_bound_to(&self.content_hash())
     }
 
     /// Whether the requisition may be used to dispatch feedback.
@@ -736,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn changing_the_paragraph_voids_approval() {
+    fn changing_the_paragraph_voids_the_paragraph_approval() {
         let mut req = requisition();
         good_comparative(&mut req);
         for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
@@ -744,17 +772,21 @@ mod tests {
             req.approve_comparative("J. Chen", role, at())
                 .expect("sign-off");
         }
-        assert!(req.approval.is_approved());
+        assert!(req.is_bound_copy_approved());
         assert!(
             req.comparative
                 .as_ref()
                 .expect("paragraph")
                 .approval
-                .is_approved()
+                .is_bound_to(&req.comparative.as_ref().expect("paragraph").content_hash())
         );
 
         good_comparative(&mut req);
-        assert!(!req.approval.is_approved());
-        assert!(!req.comparative.expect("paragraph").approval.is_approved());
+        // The requisition's own copy did not change, so its sign-off stands.
+        assert!(req.is_bound_copy_approved());
+        // The new paragraph starts unsigned.
+        let paragraph = req.comparative.expect("paragraph");
+        assert!(!paragraph.approval.is_approved());
+        assert!(paragraph.content_hash().len() == 64);
     }
 }

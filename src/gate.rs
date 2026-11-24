@@ -542,7 +542,7 @@ impl GateLibrary {
 
     /// Whether the library is complete and signed off by HM and Legal.
     pub fn is_approved(&self) -> bool {
-        self.is_complete() && self.approval.is_approved()
+        self.is_complete() && self.approval.is_bound_to(&self.content_hash())
     }
 
     /// The facts `gate` still needs before its copy can render.
@@ -581,15 +581,26 @@ impl GateLibrary {
             ));
         }
         copy.version = version;
-        // Mid-pilot copy edits require re-approval; the old signature does not carry over.
-        self.approval = Approval::default();
+        // Old sign-offs are kept on purpose: they no longer cover the new hash, so
+        // `is_approved` is false and `drift` can say exactly why. Re-approval
+        // appends a new sign-off for the new copy.
         self.copies
             .iter()
             .find(|copy| copy.gate == gate)
             .ok_or(Error::MissingGateCopy(gate))
     }
 
-    /// Records a single-pass signature on the copy library.
+    /// The SHA-256 of the copy blocks, excluding the approval itself.
+    ///
+    /// Sign-offs and operator signatures are bound to this value, so editing any
+    /// block invalidates the approval instead of silently inheriting it.
+    pub fn content_hash(&self) -> String {
+        serde_json::to_vec(&self.copies)
+            .map(|bytes| crate::digest::sha256_hex(&bytes))
+            .unwrap_or_default()
+    }
+
+    /// Records a single-pass signature bound to the current copy.
     ///
     /// # Errors
     ///
@@ -600,7 +611,8 @@ impl GateLibrary {
         role: crate::approval::SignOffRole,
         at: chrono::DateTime<chrono::Utc>,
     ) -> Result<()> {
-        self.approval.record(actor, role, at)?;
+        let hash = self.content_hash();
+        self.approval.record(actor, role, at, hash)?;
         Ok(())
     }
 
@@ -765,7 +777,18 @@ mod tests {
                 TextVersion::parse("v1.1").expect("version"),
             )
             .expect("bump");
-        assert!(!library.is_approved(), "edited copy needs re-approval");
+        assert!(
+            !library.is_approved(),
+            "the old signature does not cover the edited copy"
+        );
+        assert!(
+            library
+                .approval
+                .drift(&library.content_hash())
+                .iter()
+                .any(|issue| issue.contains("copy changed")),
+            "drift says why, rather than erasing the signature"
+        );
         assert!(
             library
                 .bump_version(

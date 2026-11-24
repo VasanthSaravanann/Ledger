@@ -514,9 +514,12 @@ struct DispatchArgs {
     /// Render and report without writing either log.
     #[arg(long)]
     preview: bool,
-    /// DELIVERY_STATUS to record: queued, sent, or failed.
-    #[arg(long, default_value = "sent")]
-    status: String,
+    /// DELIVERY_STATUS to record. Defaults to `queued` when --eml is used, else `sent`.
+    #[arg(long)]
+    status: Option<String>,
+    /// Write one RFC 5322 draft per send into this directory, plus a manifest.
+    #[arg(long, value_name = "DIR")]
+    eml: Option<PathBuf>,
     /// Write the build-time artefact pages into this directory.
     #[arg(long, value_name = "DIR")]
     export_html: Option<PathBuf>,
@@ -721,6 +724,12 @@ fn run(store: &Store, command: Command, explicit_operator: Option<&str>) -> Resu
         }
     }
 
+    let actor = Actor {
+        operator: active_operator.as_ref(),
+        registry: &registry,
+        store,
+    };
+
     // Snapshot before a command that can change many records at once.
     if wants_snapshot(&command) && active_operator.is_some() {
         let stamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
@@ -735,10 +744,10 @@ fn run(store: &Store, command: Command, explicit_operator: Option<&str>) -> Resu
         Command::Demo(DemoCommand::Seed(args)) => demo_seed(store, &args),
         Command::Status(args) => status(store, &args),
         Command::Governance(command) => governance(store, command),
-        Command::Gate(command) => gate(store, command),
-        Command::Requisition(command) => requisition(store, command),
-        Command::Templates(command) => templates(store, command),
-        Command::Playbook(command) => playbook(store, command),
+        Command::Gate(command) => gate(store, command, &actor),
+        Command::Requisition(command) => requisition(store, command, &actor),
+        Command::Templates(command) => templates(store, command, &actor),
+        Command::Playbook(command) => playbook(store, command, &actor),
         Command::Ats(AtsCommand::Import(args)) => ats_import(store, &args),
         Command::Disposition(command) => disposition(store, command, explicit_operator, &registry),
         Command::Qa(command) => qa(store, command),
@@ -1006,7 +1015,7 @@ fn governance(store: &Store, command: GovernanceCommand) -> Result<()> {
     }
 }
 
-fn gate(store: &Store, command: GateCommand) -> Result<()> {
+fn gate(store: &Store, command: GateCommand, actor: &Actor<'_>) -> Result<()> {
     match command {
         GateCommand::List => {
             let library = load_library(store)?;
@@ -1034,6 +1043,7 @@ fn gate(store: &Store, command: GateCommand) -> Result<()> {
             let role = args.role.parse::<SignOffRole>()?;
             let mut library = load_library(store)?;
             library.approve(args.actor.as_str(), role, Utc::now())?;
+            actor.sign(&mut library.approval, role)?;
             library.save(store)?;
             println!(
                 "recorded {role} sign-off on the gate library ({})",
@@ -1053,7 +1063,7 @@ fn gate(store: &Store, command: GateCommand) -> Result<()> {
     }
 }
 
-fn requisition(store: &Store, command: RequisitionCommand) -> Result<()> {
+fn requisition(store: &Store, command: RequisitionCommand, actor: &Actor<'_>) -> Result<()> {
     match command {
         RequisitionCommand::Create(args) => requisition_create(store, &args),
         RequisitionCommand::Fact(args) => {
@@ -1078,9 +1088,13 @@ fn requisition(store: &Store, command: RequisitionCommand) -> Result<()> {
                 .ok_or_else(|| Error::UnknownRequisition(id.clone()))?;
             if args.comparative {
                 requisition.approve_comparative(args.actor.as_str(), role, Utc::now())?;
+                if let Some(paragraph) = requisition.comparative.as_mut() {
+                    actor.sign(&mut paragraph.approval, role)?;
+                }
                 println!("comparative paragraph for {id} signed by {role}");
             } else {
                 requisition.approve(args.actor.as_str(), role, Utc::now())?;
+                actor.sign(&mut requisition.approval, role)?;
                 println!(
                     "requisition {id} copy signed by {role}; still needed: {}",
                     join_roles(&requisition.approval)
@@ -1242,7 +1256,7 @@ fn requisition_comparative(store: &Store, args: &RequisitionComparative) -> Resu
     Ok(())
 }
 
-fn templates(store: &Store, command: TemplatesCommand) -> Result<()> {
+fn templates(store: &Store, command: TemplatesCommand, actor: &Actor<'_>) -> Result<()> {
     match command {
         TemplatesCommand::Show => {
             let templates = load_templates(store)?;
@@ -1264,6 +1278,9 @@ fn templates(store: &Store, command: TemplatesCommand) -> Result<()> {
             let role = args.role.parse::<SignOffRole>()?;
             let mut templates = load_templates(store)?;
             templates.approve_all(args.actor.as_str(), role, Utc::now())?;
+            if let Some(operator) = actor.operator {
+                templates.sign_all(actor.registry, store, role, &operator.name)?;
+            }
             templates.save(store)?;
             println!("recorded {role} sign-off on all three templates");
             if templates.is_approved() {
@@ -1282,7 +1299,7 @@ fn templates(store: &Store, command: TemplatesCommand) -> Result<()> {
     }
 }
 
-fn playbook(store: &Store, command: PlaybookCommand) -> Result<()> {
+fn playbook(store: &Store, command: PlaybookCommand, actor: &Actor<'_>) -> Result<()> {
     match command {
         PlaybookCommand::Show => {
             let playbook = load_playbook(store)?;
@@ -1311,6 +1328,7 @@ fn playbook(store: &Store, command: PlaybookCommand) -> Result<()> {
             let role = args.role.parse::<SignOffRole>()?;
             let mut playbook = load_playbook(store)?;
             playbook.approve(args.actor.as_str(), role, Utc::now())?;
+            actor.sign(&mut playbook.approval, role)?;
             playbook.save(store)?;
             println!(
                 "recorded {role} sign-off on the playbook ({})",
@@ -1561,7 +1579,65 @@ fn verify_signatures(store: &Store, args: &VerifySignaturesArgs) -> Result<()> {
     let dispositions = Dispositions::open(store)?;
     let mut signed = 0usize;
     let mut unsigned = 0usize;
+    let mut unsigned_list: Vec<String> = Vec::new();
     let mut invalid: Vec<String> = Vec::new();
+    let mut drifted: Vec<String> = Vec::new();
+
+    // Sign-offs are checked against the copy they were bound to, and against the
+    // copy that is on disk now: a later edit must not inherit an old signature.
+    let library = load_library(store)?;
+    let templates = load_templates(store)?;
+    let playbook = load_playbook(store)?;
+    let book = load_requisitions(store)?;
+
+    // Only each role's newest sign-off is authoritative; older ones are the audit
+    // trail of what was approved before.
+    let mut check = |label: &str, approval: &ledger::approval::Approval, hash: &str| {
+        for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
+            let Some(sign_off) = approval.latest(role) else {
+                continue;
+            };
+            // A signature is checked against the hash it *recorded*, so history
+            // stays verifiable; whether it still covers the current copy is the
+            // separate "stale" question.
+            let recorded = sign_off.artefact_hash.clone().unwrap_or_default();
+            match &sign_off.signature {
+                None => {
+                    unsigned += 1;
+                    unsigned_list.push(format!("{label}:{role}"));
+                }
+                Some(signature) if signature.verify(&recorded) => signed += 1,
+                Some(_) => invalid.push(format!("{label}:{role}")),
+            }
+            if !sign_off.covers(hash) {
+                drifted.push(format!("{label}:{role}"));
+            }
+        }
+    };
+    check("gate-library", &library.approval, &library.content_hash());
+    for kind in TemplateKind::ALL {
+        let template = templates.require(kind)?;
+        check(
+            &format!("template-{}", kind.code()),
+            &template.approval,
+            &template.content_hash(),
+        );
+    }
+    check("playbook", &playbook.approval, &playbook.content_hash());
+    for requisition in book.iter() {
+        check(
+            &format!("requisition-{}", requisition.id),
+            &requisition.approval,
+            &requisition.content_hash(),
+        );
+        if let Some(paragraph) = &requisition.comparative {
+            check(
+                &format!("comparative-{}", requisition.id),
+                &paragraph.approval,
+                &paragraph.content_hash(),
+            );
+        }
+    }
     for record in dispositions.records() {
         match &record.form.signature {
             None => unsigned += 1,
@@ -1572,21 +1648,35 @@ fn verify_signatures(store: &Store, args: &VerifySignaturesArgs) -> Result<()> {
     let report = serde_json::json!({
         "signed": signed,
         "unsigned": unsigned,
+        "unsigned_records": unsigned_list,
         "invalid": invalid,
+        "drifted": drifted,
     });
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
         println!("signed records:   {signed}");
         println!("unsigned records: {unsigned}");
+        if !unsigned_list.is_empty() {
+            println!("UNSIGNED:         {}", unsigned_list.join(", "));
+        }
         if !invalid.is_empty() {
             println!("INVALID:          {}", invalid.join(", "));
         }
+        if !drifted.is_empty() {
+            println!("STALE (copy edited after sign-off): {}", drifted.join(", "));
+        }
     }
-    if !invalid.is_empty() {
+    let registry = ledger::identity::Registry::load(store)?;
+    if !invalid.is_empty() || !drifted.is_empty() || (!registry.is_empty() && unsigned > 0) {
         return Err(Error::invalid(
             "signature",
-            format!("{} record(s) failed signature verification", invalid.len()),
+            format!(
+                "{} invalid signature(s), {} stale sign-off(s), {} unsigned",
+                invalid.len(),
+                drifted.len(),
+                unsigned
+            ),
         ));
     }
     Ok(())
@@ -1681,6 +1771,13 @@ fn dispatch_command(store: &Store, args: &DispatchArgs) -> Result<()> {
     } else {
         Mode::Execute
     };
+    // A drafted batch has not been sent: record `queued` unless the operator says
+    // otherwise, so the log never claims a delivery that did not happen.
+    let delivery_status = match args.status.as_deref() {
+        Some(status) => status.parse::<DeliveryStatus>()?,
+        None if args.eml.is_some() => DeliveryStatus::Queued,
+        None => DeliveryStatus::Sent,
+    };
     let report = dispatch(
         &Dispatch {
             mode,
@@ -1691,7 +1788,7 @@ fn dispatch_command(store: &Store, args: &DispatchArgs) -> Result<()> {
             roster: &roster,
             dispositions: &dispositions,
             qa: &qa_log,
-            delivery_status: args.status.parse::<DeliveryStatus>()?,
+            delivery_status,
             now: Utc::now(),
         },
         &mut send_log,
@@ -1714,6 +1811,28 @@ fn dispatch_command(store: &Store, args: &DispatchArgs) -> Result<()> {
         );
     } else {
         print_dispatch_report(&report, mode);
+    }
+
+    if let Some(dir) = &args.eml {
+        if mode == Mode::Preview {
+            println!("\n(--eml writes drafts; run without --preview to record the batch)");
+        } else {
+            let sender = format!("{}, {}", requisition.sender.name, requisition.sender.title);
+            let batch = ledger::eml::write_batch(
+                dir,
+                requisition.id.as_str(),
+                &sender,
+                requisition.reply_to.as_str(),
+                &report.sent,
+            )?;
+            println!(
+                "\nwrote {} draft(s) to {} (status {})",
+                batch.files.len(),
+                dir.display(),
+                delivery_status
+            );
+            println!("batch digest: {}", batch.batch_digest);
+        }
     }
 
     if let Some(dir) = &args.export_html {
@@ -2206,6 +2325,23 @@ fn find(store: &Store, args: &FindArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The acting operator plus what a sign-off needs to record a signature.
+struct Actor<'a> {
+    operator: Option<&'a ledger::identity::Operator>,
+    registry: &'a ledger::identity::Registry,
+    store: &'a Store,
+}
+
+impl Actor<'_> {
+    /// Signs a role's sign-off when an operator key is registered.
+    fn sign(&self, approval: &mut ledger::approval::Approval, role: SignOffRole) -> Result<()> {
+        if let Some(operator) = self.operator {
+            approval.sign(role, self.registry, self.store, &operator.name)?;
+        }
+        Ok(())
+    }
 }
 
 /// Whether a command only reads.

@@ -78,16 +78,49 @@ pub struct SignOff {
     pub role: SignOffRole,
     /// When they signed.
     pub at: DateTime<Utc>,
+    /// The SHA-256 of the copy this signature covers.
+    ///
+    /// Absent only in workspaces written before sign-offs were bound to copy; such
+    /// a sign-off does not count as approval, so an edited block can never inherit
+    /// an old signature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artefact_hash: Option<String>,
+    /// Ed25519 signature over `artefact_hash`, when an operator key is registered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<crate::identity::Signed>,
 }
 
 impl SignOff {
     /// Builds a sign-off, rejecting a blank actor.
-    fn new(actor: impl Into<String>, role: SignOffRole, at: DateTime<Utc>) -> Result<Self> {
+    fn new(
+        actor: impl Into<String>,
+        role: SignOffRole,
+        at: DateTime<Utc>,
+        artefact_hash: impl Into<String>,
+    ) -> Result<Self> {
         let actor = actor.into().trim().to_owned();
         if actor.is_empty() {
             return Err(Error::invalid("sign-off actor", "must name a person"));
         }
-        Ok(Self { actor, role, at })
+        let artefact_hash = artefact_hash.into();
+        if artefact_hash.len() != 64 {
+            return Err(Error::invalid(
+                "sign-off",
+                "must be bound to a 64-character content hash",
+            ));
+        }
+        Ok(Self {
+            actor,
+            role,
+            at,
+            artefact_hash: Some(artefact_hash),
+            signature: None,
+        })
+    }
+
+    /// Whether this sign-off covers exactly `hash`.
+    pub fn covers(&self, hash: &str) -> bool {
+        self.artefact_hash.as_deref() == Some(hash)
     }
 }
 
@@ -99,22 +132,29 @@ pub struct Approval {
 }
 
 impl Approval {
-    /// Records a signature. A role signs once; a repeat is rejected.
+    /// Records a signature bound to the copy's content hash. A role signs once.
     ///
     /// # Errors
     ///
     /// Returns [`Error::AlreadySignedOff`] when `role` already signed, and
-    /// [`Error::Invalid`] when `actor` is blank.
+    /// [`Error::Invalid`] when `actor` is blank or the hash is malformed.
     pub fn record(
         &mut self,
         actor: impl Into<String>,
         role: SignOffRole,
         at: DateTime<Utc>,
+        artefact_hash: impl Into<String>,
     ) -> Result<&SignOff> {
-        if self.has(role) {
-            return Err(Error::AlreadySignedOff { role });
+        let hash = artefact_hash.into();
+        // A role signs one *version* of the copy. Re-signing the same copy is a
+        // repeat; signing a new copy is a re-approval, and the earlier sign-off is
+        // kept so the drift is visible rather than erased.
+        if let Some(latest) = self.latest(role) {
+            if latest.covers(&hash) {
+                return Err(Error::AlreadySignedOff { role });
+            }
         }
-        self.sign_offs.push(SignOff::new(actor, role, at)?);
+        self.sign_offs.push(SignOff::new(actor, role, at, hash)?);
         self.sign_offs
             .last()
             .ok_or_else(|| Error::invalid("sign-off", "recorded sign-off disappeared"))
@@ -142,12 +182,90 @@ impl Approval {
     pub fn is_approved(&self) -> bool {
         self.missing().is_empty()
     }
+
+    /// The newest sign-off for `role`.
+    pub fn latest(&self, role: SignOffRole) -> Option<&SignOff> {
+        self.sign_offs
+            .iter()
+            .rev()
+            .find(|sign_off| sign_off.role == role)
+    }
+
+    /// Whether both roles' newest sign-off covers exactly this copy.
+    pub fn is_bound_to(&self, hash: &str) -> bool {
+        [SignOffRole::HiringManager, SignOffRole::Legal]
+            .into_iter()
+            .all(|role| {
+                self.latest(role)
+                    .is_some_and(|sign_off| sign_off.covers(hash))
+            })
+    }
+
+    /// Why this approval does not cover `hash`, if it does not.
+    ///
+    /// Distinguishes "not signed" from "signed different copy", because the second
+    /// is the case an operator must not paper over.
+    pub fn drift(&self, hash: &str) -> Vec<String> {
+        let mut issues = Vec::new();
+        for role in [SignOffRole::HiringManager, SignOffRole::Legal] {
+            match self.latest(role) {
+                None => issues.push(format!("{role} has not signed")),
+                Some(sign_off) => match &sign_off.artefact_hash {
+                    None => issues.push(format!(
+                        "{role} signed before copy binding was introduced; re-approval required"
+                    )),
+                    Some(recorded) if recorded != hash => issues.push(format!(
+                        "copy changed after {role} signed (signed {}, current {})",
+                        &recorded[0..12.min(recorded.len())],
+                        &hash[0..12.min(hash.len())]
+                    )),
+                    Some(_) => {}
+                },
+            }
+        }
+        issues
+    }
+
+    /// Attaches an Ed25519 signature to a role's sign-off.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Invalid`] when no sign-off with that role exists, and
+    /// propagates signature errors.
+    pub fn sign(
+        &mut self,
+        role: SignOffRole,
+        registry: &crate::identity::Registry,
+        store: &crate::store::Store,
+        operator: &str,
+    ) -> Result<()> {
+        let sign_off = self
+            .sign_offs
+            .iter_mut()
+            .rev()
+            .find(|sign_off| sign_off.role == role)
+            .ok_or_else(|| {
+                Error::invalid(
+                    "sign-off",
+                    format!("{role} has not signed yet, so there is nothing to sign"),
+                )
+            })?;
+        let hash = sign_off
+            .artefact_hash
+            .clone()
+            .ok_or_else(|| Error::invalid("sign-off", "sign-off is not bound to copy"))?;
+        sign_off.signature = Some(crate::identity::sign(registry, store, operator, &hash)?);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    const HASH_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const HASH_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     fn at() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 11, 1, 9, 0, 0)
@@ -160,23 +278,24 @@ mod tests {
         let mut approval = Approval::default();
         assert!(!approval.is_approved());
         approval
-            .record("J. Chen", SignOffRole::HiringManager, at())
+            .record("J. Chen", SignOffRole::HiringManager, at(), HASH_A)
             .expect("first signature");
         assert_eq!(approval.missing(), vec![SignOffRole::Legal]);
         approval
-            .record("M. Okafor", SignOffRole::Legal, at())
+            .record("M. Okafor", SignOffRole::Legal, at(), HASH_A)
             .expect("second signature");
         assert!(approval.is_approved());
+        assert!(approval.is_bound_to(HASH_A));
     }
 
     #[test]
     fn a_role_signs_once() {
         let mut approval = Approval::default();
         approval
-            .record("J. Chen", SignOffRole::Legal, at())
+            .record("J. Chen", SignOffRole::Legal, at(), HASH_A)
             .expect("first signature");
         assert!(matches!(
-            approval.record("Someone else", SignOffRole::Legal, at()),
+            approval.record("Someone else", SignOffRole::Legal, at(), HASH_A),
             Err(Error::AlreadySignedOff {
                 role: SignOffRole::Legal
             })
@@ -186,6 +305,65 @@ mod tests {
     #[test]
     fn a_reviewer_must_be_named() {
         let mut approval = Approval::default();
-        assert!(approval.record("  ", SignOffRole::Legal, at()).is_err());
+        assert!(
+            approval
+                .record("  ", SignOffRole::Legal, at(), HASH_A)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_signature_does_not_transfer_to_edited_copy() {
+        let mut approval = Approval::default();
+        approval
+            .record("J. Chen", SignOffRole::HiringManager, at(), HASH_A)
+            .expect("hm");
+        approval
+            .record("M. Okafor", SignOffRole::Legal, at(), HASH_A)
+            .expect("legal");
+        assert!(approval.is_approved());
+        assert!(approval.is_bound_to(HASH_A));
+        assert!(!approval.is_bound_to(HASH_B), "edited copy is not approved");
+
+        let drift = approval.drift(HASH_B);
+        assert_eq!(drift.len(), 2, "{drift:?}");
+        assert!(drift.iter().all(|issue| issue.contains("copy changed")));
+    }
+
+    #[test]
+    fn an_unbound_legacy_signature_does_not_count() {
+        let mut approval = Approval::default();
+        approval.sign_offs.push(SignOff {
+            actor: "J. Chen".to_owned(),
+            role: SignOffRole::HiringManager,
+            at: at(),
+            artefact_hash: None,
+            signature: None,
+        });
+        approval.sign_offs.push(SignOff {
+            actor: "M. Okafor".to_owned(),
+            role: SignOffRole::Legal,
+            at: at(),
+            artefact_hash: None,
+            signature: None,
+        });
+        assert!(approval.is_approved(), "both roles are present");
+        assert!(!approval.is_bound_to(HASH_A), "but nothing is bound");
+        assert!(
+            approval
+                .drift(HASH_A)
+                .iter()
+                .any(|issue| issue.contains("re-approval required"))
+        );
+    }
+
+    #[test]
+    fn a_malformed_hash_is_refused() {
+        let mut approval = Approval::default();
+        assert!(
+            approval
+                .record("J. Chen", SignOffRole::Legal, at(), "short")
+                .is_err()
+        );
     }
 }

@@ -31,6 +31,7 @@ pub mod checklist;
 pub mod demo;
 pub mod digest;
 pub mod disposition;
+pub mod eml;
 pub mod error;
 pub mod gate;
 pub mod id;

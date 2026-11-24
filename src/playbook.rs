@@ -187,12 +187,19 @@ impl Playbook {
             .all(|scenario| self.require(scenario).is_ok())
     }
 
-    /// Whether the playbook is complete and signed off.
+    /// Whether the playbook is complete and signed off against this copy.
     pub fn is_approved(&self) -> bool {
-        self.is_complete() && self.approval.is_approved()
+        self.is_complete() && self.approval.is_bound_to(&self.content_hash())
     }
 
-    /// Records a single-pass signature on the playbook.
+    /// The SHA-256 of the five scripts, excluding the approval.
+    pub fn content_hash(&self) -> String {
+        serde_json::to_vec(&self.scripts)
+            .map(|bytes| crate::digest::sha256_hex(&bytes))
+            .unwrap_or_default()
+    }
+
+    /// Records a single-pass signature bound to the current scripts.
     ///
     /// # Errors
     ///
@@ -203,7 +210,8 @@ impl Playbook {
         role: SignOffRole,
         at: DateTime<Utc>,
     ) -> Result<()> {
-        self.approval.record(actor, role, at)?;
+        let hash = self.content_hash();
+        self.approval.record(actor, role, at, hash)?;
         Ok(())
     }
 

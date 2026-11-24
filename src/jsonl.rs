@@ -90,6 +90,55 @@ impl<T: Serialize> AppendLog<T> {
     }
 }
 
+impl<T: Serialize> AppendLog<T> {
+    /// Appends several records in one write and one fsync.
+    ///
+    /// All-or-nothing at the syscall level: either the whole batch is written or
+    /// the write fails. A crash after the write leaves complete lines, and a crash
+    /// during it leaves a detectable torn tail.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Json`] when any record cannot be serialized (nothing is
+    /// written in that case), and [`Error::Io`] when the write fails.
+    pub fn append_batch(&mut self, records: &[T]) -> Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        if let Some(parent) = self.path.parent() {
+            crate::store::ensure_dir(parent)?;
+        }
+        let mut buffer = Vec::new();
+        for record in records {
+            let line = serde_json::to_string(record)?;
+            buffer.extend_from_slice(line.as_bytes());
+            buffer.push(b'\n');
+        }
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+            .map_err(|source| Error::Io {
+                path: self.path.clone(),
+                source,
+            })?;
+        crate::store::restrict(&self.path, 0o600)?;
+        file.write_all(&buffer).map_err(|source| Error::Io {
+            path: self.path.clone(),
+            source,
+        })?;
+        file.sync_all().map_err(|source| Error::Io {
+            path: self.path.clone(),
+            source,
+        })?;
+        if let Some(parent) = self.path.parent() {
+            sync_dir(parent)?;
+        }
+        Ok(())
+    }
+}
+
 impl<T: DeserializeOwned> AppendLog<T> {
     /// Reads every record, in append order. A missing file is an empty log.
     ///
@@ -203,6 +252,24 @@ mod tests {
             log.read_all().expect("read back"),
             vec![Row { n: 1 }, Row { n: 2 }]
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_batch_is_one_write_of_complete_lines() {
+        let dir = std::env::temp_dir().join(format!("ledger-batch-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("rows.jsonl");
+        let mut log = AppendLog::open(&path);
+        log.append_batch(&[Row { n: 1 }, Row { n: 2 }, Row { n: 3 }])
+            .expect("batch");
+        assert_eq!(
+            log.read_all().expect("read"),
+            vec![Row { n: 1 }, Row { n: 2 }, Row { n: 3 }]
+        );
+        let text = fs::read_to_string(&path).expect("read");
+        assert_eq!(text.matches('\n').count(), 3);
+        assert!(text.ends_with('\n'));
         let _ = fs::remove_dir_all(&dir);
     }
 
