@@ -5,9 +5,8 @@
 //! encoder regression, or a fixture change all fail here before they can silently
 //! invalidate a real deployment's log.
 //!
-//! When a change is intentional, regenerate with
-//! `./scripts/build-site.sh` and update the constants below in the same commit,
-//! together with `FORMAT_SPEC.md`.
+//! When a change is intentional, regenerate the fixture with `ledger demo seed`,
+//! update the constants below in the same commit, together with `FORMAT_SPEC.md`.
 
 use std::fs;
 use std::path::PathBuf;

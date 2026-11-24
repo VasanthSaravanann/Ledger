@@ -1,6 +1,4 @@
-/* Ledger design tokens. Shared by `ledger ui` (embedded) and, deliberately, not
-   yet by the artefact site: that CSS is generated inside a format! string, so
-   sharing it changes published bytes and needs a provenance bump. */
+/* Ledger design tokens, embedded with include_str! by `ledger ui`. */
 :root {
   --bg: #fbfbfa;
   --fg: #17181a;

@@ -1,7 +1,7 @@
 # Ledger
 
 Audit-grade candidate feedback pilot, implemented in Rust. The operational spec is
-[`V2.md`](V2.md); the site and demo-fixture spec is [`V3.md`](V3.md); the earlier v1
+[`V2.md`](V2.md); the demo-fixture spec is [`V3.md`](V3.md); the earlier v1
 scope is [`plan.md`](plan.md).
 
 The point of the tool is that V2's constraints are not review instructions. They
@@ -93,10 +93,10 @@ ledger review criteria --data pilot --requisition REQ-2026-014 --status agreed-o
 ledger review route --data pilot --requisition REQ-2026-014
 ```
 
-## Demo fixture and artefact site (V3)
+## Demo fixture (V3)
 
-Everything on the site is generated from the CLI at build time, from a deterministic
-fixture. Nothing on it is pilot data.
+The deterministic synthetic fixture that the tests and the walkthrough use. Nothing
+in it is pilot data.
 
 ```bash
 # Deterministic fixture: 151 CSV rows, 150 roster rows, 12 GATE / 129 FIELD / 8 ADMIN,
@@ -104,17 +104,12 @@ fixture. Nothing on it is pilot data.
 ledger demo seed --data pilot --force            # pre-dispatch: preview shows 3 blocked
 ledger dispatch --data pilot --requisition REQ-2026-014 --preview
 
-# Recorded variant for the site, including the GATE-02 version bump:
+# Recorded variant, including the GATE-02 version bump:
 ledger demo seed --data pilot --force --record
-
-# Write the artefact pages straight from the loaded workspace.
-ledger dispatch --data pilot --requisition REQ-2026-014 --preview --export-html site
 ```
 
-`scripts/build-site.sh` runs the seed and the export, and records `site/demo.cast`
-when `asciinema` is installed. The fixture is byte-deterministic: two seeds in two
-directories produce the same fingerprint and the same log head, which the test suite
-asserts.
+The fixture is byte-deterministic: two seeds in two directories produce the same
+fingerprint and the same log head, which the test suite asserts.
 
 | Route | Page |
 | --- | --- |
@@ -320,23 +315,39 @@ backtrace itself.
 The workspace directory is `0700` and every state and log file is `0600`,
 enforced on creation regardless of the process umask. `tests/` asserts this.
 
-### Site pages
+### Workspace preview (`web/`)
 
-`/` (product landing), `/lab` (interactive: gate rules, rendered emails, and a chain
-re-hashed in the browser with `crypto.subtle`), `/workspace` and
-`/workspace-governance` (snapshots of the real `ledger ui` screens, captured from a
-live server run at build time), `/emails`, `/gates`, `/audit`, `/comparative`,
-`/demo`, `/ui`, `/format`, `/threat-model`, `/verify` and `/cli`, plus
-`404.html`, `robots.txt` and `sitemap.xml`. Every generated page carries build provenance: commit SHA, the
-commit timestamp used as generation time, and the fixture fingerprint. Two runs of
-`scripts/build-site.sh` on one commit are byte-identical, which is what makes the
-CI drift check meaningful.
+`web/` is the recruiter workspace as a browser app: a TanStack Start + React 19
+single-page workspace built in [Lovable](https://lovable.dev) (project
+`f0481c24-dcfa-4ea5-9b31-1d0a285832ee`). It is deployed to Vercel as the project's
+production site (`ledger-pilot`, domain `ledger-pilot-chi.vercel.app`).
 
-Deployment uses the existing Vercel↔GitHub integration on `main`: Vercel's build
-image has no Rust toolchain, so it serves the committed pages that
-`scripts/build-site.sh` produced, and CI fails if those pages differ from a fresh
-generation. That keeps "what was reviewed" and "what is deployed" the same bytes
-without building Rust at deploy time.
+**It is a UI preview, not the ledger.** The roster is a 48-row session fixture, every
+change is in-memory, and nothing is signed, chained or persisted. The app says so on
+every screen (`Sample data · Not connected to the ledger`, `UI preview`); the Rust CLI
+remains the only thing that records a real disposition. Do not present browser-side
+"dispositions" as Ed25519 signatures or a verified append log.
+
+```bash
+cd web
+bun install --frozen-lockfile
+bun run dev                      # http://localhost:5173
+bun run test                     # vitest: 5 tests
+NITRO_PRESET=vercel bun run build  # writes .vercel/output (Build Output API v3)
+```
+
+Vercel builds `web/` on every push to `main` (Root Directory `web`, install
+`bun install --frozen-lockfile`, build `NITRO_PRESET=vercel bun run build`). The Rust
+workspace is untouched by that build: no `ledger` binary, no workspace directory, no
+`cargo` at deploy time. `web/AGENTS.md` carries Lovable's own rules — do not rewrite
+history on the connected branch, and change DB/secret/AI-gateway pieces in Lovable,
+not by hand.
+
+### No generated site
+
+`ledger` still has no static site generator: nothing under `site/` is generated,
+committed or served. The only published bytes are the `web/` app above, and the only
+server the Rust code runs is the loopback-only `ledger ui`.
 
 ## Supported platforms
 

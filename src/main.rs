@@ -219,7 +219,7 @@ struct DemoSeedArgs {
     /// Replace an existing pilot in this workspace.
     #[arg(long)]
     force: bool,
-    /// Also commit the sends and the GATE-02 version bump (for the site build).
+    /// Also commit the sends and the GATE-02 version bump.
     #[arg(long)]
     record: bool,
     /// Print the summary as JSON.
@@ -531,9 +531,6 @@ struct DispatchArgs {
     /// Write one RFC 5322 draft per send into this directory, plus a manifest.
     #[arg(long, value_name = "DIR")]
     eml: Option<PathBuf>,
-    /// Write the build-time artefact pages into this directory.
-    #[arg(long, value_name = "DIR")]
-    export_html: Option<PathBuf>,
     /// Print the run as JSON.
     #[arg(long)]
     json: bool,
@@ -1805,17 +1802,6 @@ fn dispatch_command(store: &Store, args: &DispatchArgs) -> Result<()> {
                 delivery_status
             );
             println!("batch digest: {}", batch.batch_digest);
-        }
-    }
-
-    if let Some(dir) = &args.export_html {
-        let export = ledger::site::export_html(store, dir)?;
-        println!("\nwrote {} pages to {}", export.pages.len(), dir.display());
-        if !args.json {
-            println!(
-                "audit: untouched log verifies = {}, one-byte tamper detected = {}",
-                export.audit_valid, export.audit_tampered_detected
-            );
         }
     }
 

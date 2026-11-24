@@ -2,15 +2,14 @@
 name: ledger-pilot
 description: >-
   Build, change, review or operate Ledger — the audit-grade candidate feedback
-  pilot in Rust at ~/Desktop/Ledger (CLI + optional `ledger ui` server + static
-  Vercel site). Trigger whenever a task touches this repo or its concepts:
+  pilot in Rust at ~/Desktop/Ledger (CLI + optional loopback `ledger ui` server;
+  no published site). Trigger whenever a task touches this repo or its concepts:
   plan.md, V2.md, V3.md, V4.md, V5.md, Web.md, website.md, dispositions
   (GATE/FIELD/ADMIN), gate copy (GATE-01..05), comparative paragraph, templates
   A/B/C, reply playbook, ATS CSV import, QA sampling, send log / hash chain /
   canonical digest / schema_version, signatures / operators / RBAC / sign-off
-  drift, metrics and go-no-go routing, demo fixture, artefact site, `lab`,
-  workspace snapshots, CSP, or deployment to Vercel. Also use it when the user
-  says "the pilot", "feedback pilot", "disposition", "gate blocking",
+  drift, metrics and go-no-go routing, or the demo fixture. Also use it when the
+  user says "the pilot", "feedback pilot", "disposition", "gate blocking",
   "immutable log", "verify-signatures", "ledger ui", or names any V-task id.
 ---
 
@@ -19,7 +18,7 @@ description: >-
 One file that carries everything an agent needs to work on this repository: what
 the product is, what the seven specification documents demanded, what was actually
 built and decided across the whole build conversation, the invariants that must not
-break, and how to run, test and ship it.
+break, and how to run and test it.
 
 The specifications themselves remain authoritative in the repo — `plan.md`, `V2.md`,
 `V3.md`, `V4.md`, `V5.md`, `Web.md`, `website.md`. This file compresses them, adds
@@ -42,12 +41,15 @@ Non-goals, by design (do not "helpfully" add them):
 - No ATS API. One CSV in, drafts out.
 - No hosted multi-tenant service. The workspace is a directory the team holds.
 - No Windows binary. macOS and Linux only, and that is stated publicly.
+- **No generated site.** No static site generator, no committed HTML: the `web/`
+  Lovable UI preview is the only published surface, and the loopback-only `ledger ui`
+  server is the only one the Rust code runs.
 - The pilot's *legal* acts (counsel's privacy opinion, a real monitored mailbox,
   HM/Legal signatures, the real requisition) are human; the tool records them, it
   cannot perform them. Never claim a pilot is "live" because the code is ready.
 
-Stack: Rust 2024, MSRV **1.85**, 12 direct crates, zero networking crates in the
-default graph. Optional `ui` feature adds axum + tokio. 15k lines across 33 modules,
+Stack: Rust 2024, MSRV **1.85**, 11 direct crates, zero networking crates in the
+default graph. Optional `ui` feature adds axum + tokio. 16k lines across 33 modules,
 136 tests (144 with `--features ui`).
 
 ---
@@ -82,18 +84,15 @@ default graph. Optional `ui` feature adds axum + tokio. 15k lines across 33 modu
 | `src/approval.rs` | `SignOff` (actor/role/at/copy hash/signature), `Approval`, `drift`, `ArtefactStatus`. |
 | `src/checklist.rs` | The 13 plan tasks, `TASKS`, `Checklist` (`checklist.json`). |
 | `src/demo.rs` | Deterministic fixture, five planted failure cases, fingerprint. |
-| `src/site.rs` | Build-time page generator: shell, artefact pages, `/lab`, `/ui`, docs, sitemap, 404. |
 | `src/eml.rs` | RFC 5322 draft batch + `manifest.json` + `verify_batch`. |
-| `src/assets.rs` | `include_str!` of `src/ui/assets/{tokens.css,app.css,app.js}` shared by site + server. |
+| `src/assets.rs` | `include_str!` of `src/ui/assets/{tokens.css,app.css,app.js}` for the server. |
 | `src/ui/` | `ledger ui` axum server (feature-gated), assets, HTTP tests in `tests/ui.rs`. |
 | `src/redact.rs` | `#hash` handles for ids/emails in console output; `--debug-ids`. |
 | `verify_log.py` | Stdlib-only independent verifier (chain + digests + monotonic time). |
 | `FORMAT_SPEC.md`, `THREAT_MODEL.md` | Normative byte format; and what the chain does/does not prove. |
-| `scripts/build-site.sh` | Seeds fixture → exports pages → snapshots the live UI → optional cast. |
 | `scripts/demo-walkthrough.sh`, `scripts/coverage-floors.sh` | Scripted demo; per-module coverage gate. |
-| `site/` | Committed static output (`index.html` hand-written; everything else generated). |
-| `vercel.json` | `outputDirectory: site`, `cleanUrls`, security headers incl. strict CSP. |
-| `.github/workflows/ci.yml` | test · msrv · supply-chain · coverage (+ weekly mutants, nightly fuzz). |
+| `.github/workflows/ci.yml` | test · msrv · supply-chain · coverage · web (+ weekly mutants, nightly fuzz). |
+| `web/` | Lovable UI preview: TanStack Start workspace, session-only sample data, deployed to Vercel. |
 
 ---
 
@@ -131,15 +130,13 @@ Adds the parts that make evidence defensible. All implemented in `acbff64`.
 - 3.1 hard initial-screen filter, `KO_ANSWER_0n` mapping → `ats.rs`; 3.2 every V2 send-log column → `log.rs`; 3.3 three circuit-breakers → `pipeline.rs`.
 - 4.1 QA runbook (100% GATE, deterministic 10%) → `qa.rs`; 4.2 five metrics with bands → `metrics.rs`; 4.3 six routing consequences → `review.rs`.
 
-### 3.3 `V3.md` — demo fixture + artefact site (9 tasks)
+### 3.3 `V3.md` — demo fixture (9 tasks; the site half was later removed)
 
-- 0.1 one correct run block, 0.2 `work-rights-duration` everywhere, 0.3 synthetic-fixture disclosure on every page.
+- 0.1 one correct run block, 0.2 `work-rights-duration` everywhere, 0.3 synthetic-fixture disclosure.
 - 1.1 `ledger demo seed [--force] [--record]`; 1.2 five planted failure cases; 1.3 determinism test.
-- 2.1 `--export-html`; 2.2–2.5 `/emails`, `/gates`, `/audit`, `/comparative`; 2.6 build wiring. 3.1–3.2 scripted run + appendix.
-
-Built in `7d8d9be`. Deviations, both stated at the time: generation runs locally and
-the output is committed (Vercel has no Rust toolchain), and `asciinema` was absent so
-`/demo` ships a generated transcript (the script is ready for `cast`).
+- 2.1–2.6 and 3.1–3.2 built the artefact site and its build wiring. **Removed:** `src/site.rs`,
+  `--export-html`, `site/`, `vercel.json`, `scripts/build-site.sh` and the CI drift check
+  are gone; only the fixture (1.x) remains, which is what the tests and demo need.
 
 ### 3.4 `V4.md` — hardening (30 tasks, 8 priorities)
 
@@ -160,7 +157,7 @@ Built in `3a7a1b9`. Delivered: 1.1–1.5, 2.1–2.5, 3.1–3.4, 4.1–4.5 (spec+
 2. Audit trail, retention (`purge`), `migrate`, `--json` everywhere, `anchor`.
 3. Ed25519 identities, RBAC, pre-mutation backups, sign-off drift.
 4. Recruiter web UI (axum): triage, bulk, mapper, `.eml`/zip, in-UI checklist.
-5. Public site: build command + provenance, specs/verifier pages, 404/robots/sitemap/OG, wasm demo.
+5. Public site (later removed): build command + provenance, specs/verifier pages, 404/robots/sitemap/OG, wasm demo.
 
 Built across `24145c9`, `16a1caa`, `3f880a2`, `7c5326c`. Phase 5.3 (wasm) deferred.
 Phase 4 delivered its foundation, not all screens (see §10).
@@ -206,10 +203,12 @@ The build conversation, compressed. Commit refs are real; use `git show` for det
 | 14 | "the site isn't a product" | Product landing, interactive `/lab` (WebCrypto chain verification), real `ledger ui` snapshots at `/workspace` (`43c86bf`). |
 | 15 | "review" | 10 findings from modern-web-guidance; all fixed: XSS sink, CSP, table semantics, a11y, motion (`f71d930`). |
 | 16 | "make a skill file" | This document. |
+| 17 | "remove the complete website and static html" | Deleted `site/`, `src/site.rs`, `--export-html`, `vercel.json`, `.vercelignore`, `scripts/build-site.sh` and the CI drift step; dropped `pulldown-cmark`. Rows 3, 4, 14 and 15 describe work that no longer exists in the tree. |
+| 18 | "connect the Lovable project, push to main, new prod" | Moved the Lovable export to `web/` (TanStack Start, UI preview), added `web/vercel.json`, pointed the Vercel project's Root Directory at `web` with `NITRO_PRESET=vercel`, pushed to `main` and deployed production. |
 
-Live site: **https://ledger-pilot-chi.vercel.app** (`/`, `/lab`, `/workspace`,
-`/workspace-governance`, `/emails`, `/gates`, `/audit`, `/comparative`, `/demo`,
-`/ui`, `/format`, `/threat-model`, `/verify`, `/cli`, 404, robots, sitemap).
+Production is the `web/` preview at **https://ledger-pilot-chi.vercel.app** — sample
+data only, not connected to the Rust ledger. The removed artefact pages are gone; do
+not cite their URLs.
 
 ---
 
@@ -287,25 +286,21 @@ the useful part.
 21. **`chrono`'s unmaintained advisory is ignored with a reason and a review date**
     (2026-12-31), not silently; migrating to `jiff` is scheduled, not urgent.
 
-### Web and deployment
+### Web surface
 
-22. **Deployment is the GitHub↔Vercel integration serving committed `site/`.** Vercel
-    has no Rust toolchain, so CI generates, drift-checks, and then the push ships those
-    bytes. No `buildCommand`, no `npm`, no deploy-time Rust.
-23. **Provenance is an input, not `HEAD`.** Pages name the commit they were generated
-    from; it is stored in `site/provenance.json` and bumped with
-    `LEDGER_BUMP_PROVENANCE=1`. Reading `HEAD` makes the drift check unwinnable.
-24. **Drift check requires determinism**, so generated pages must not render a clock and
-    snapshots must not render timestamps.
-25. **`script-src 'self'`.** `lab.js` and `app.js` are files; snapshots get their inline
-    script rewritten at build time. Adding an inline `<script>` breaks the site under CSP.
-26. **The lab duplicates no rule.** Rust emits the data; JavaScript renders it and
-    re-hashes the canonical payload with WebCrypto. If you find yourself implementing a
-    gate rule in JS, stop.
-27. **The workspace snapshots are the app's own HTML** captured from a live server run,
-    with links rewritten to the sibling page and a "read-only snapshot" banner.
-28. **No CDN, no webfonts, system font stack, `include_str!` assets** — air-gapped by
-    construction.
+22. **The public site is the `web/` UI preview, and only that.** The Rust artefact
+    generator, the committed pages, `vercel.json` at the root and the drift check were
+    removed together; what replaced them is a separate TanStack Start app that Vercel
+    builds from `web/`. Do not reintroduce a generator, a `site/` directory or
+    committed HTML.
+23. **`web/` is a preview, not a ledger.** Session-only sample roster, no persistence,
+    no signatures, no chain. Every screen says so. The next honest step is wiring it to
+    the Rust core, not dressing the fixture up as evidence.
+24. **`ledger ui` is a loopback app, not a website.** It binds 127.0.0.1 behind the
+    `ui` feature, serves HTML from `include_str!` assets, and has no external asset,
+    no CDN and no build step. That is the only HTTP surface the Rust code serves.
+24. **No CDN, no webfonts, system font stack** — air-gapped by construction, so the
+    server works on a machine that has never had a network.
 
 ### Deferred on purpose
 
@@ -334,7 +329,6 @@ execution. These are the resolutions in force.
 | V4 4.4 vs 4.3.2 | "fail closed on unknown schema" vs "old entries still verify" | `schema_version` outside the digest; unknown version still refuses. |
 | V4 6.2 vs CI | exit `2` on block aborts scripted flows | `--preview` always `0`; commit exits `2` unless `--allow-blocked`. |
 | V4 6.3 vs automation | `--yes` on every mutation | Only destructive commands require it. |
-| V5 5.1 vs Vercel | build command runs `cargo` | No build command; CI generates and commits, Vercel serves. |
 | V5 4.1 vs deny.toml | axum needs hyper; hyper banned | hyper unbanned, claim narrowed, clients still banned. |
 | V5 2.5 vs offline | webhook needs a network call | Receipt file + optional local git commit; webhook is a separate script. |
 | V5 2.2 vs chain | purge PII but keep hashes | Tombstones for unchained records only; send log retained; whole-workspace erasure at end of retention. |
@@ -346,10 +340,11 @@ execution. These are the resolutions in force.
 | website.md 4 vs RBAC | `/audit` "all roles" + snapshot button | Snapshot is approver-only; auditors read. |
 | Web.md 6 | `src/operator.rs` assumed to hold identity | Identity is `src/identity.rs`; `operator.rs` is the audit log. |
 
-Also fixed during review: the sidebar rendered "Import (CLI)" pointing at `/audit`; the
-lab built table rows with `innerHTML` from operator-authored facts (stored XSS); the
-skip link was permanently clipped; body type was in `px`, ignoring OS text scaling;
-smooth scroll and the bulk slide ignored `prefers-reduced-motion`.
+Also fixed during review: the lab built table rows with `innerHTML` from
+operator-authored facts (stored XSS); the skip link was permanently clipped; body type
+was in `px`, ignoring OS text scaling; smooth scroll and the bulk slide ignored
+`prefers-reduced-motion`. Those fixes lived in `src/site.rs`/`lab.js` and went with the
+site; `src/ui/assets/app.css` keeps the type-scale and motion rules.
 
 ---
 
@@ -375,8 +370,7 @@ Break one of these and you have broken the product, not just a test.
 | Sign-offs cannot be inherited by edited copy | `content_hash` + `Approval::is_bound_to` | `editing_approved_copy_blocks_dispatch_until_reapproved` |
 | Roles gate commands | `Role::permits` at CLI and HTTP | `roles_gate_the_commands_they_should`, `an_auditor_can_read_but_not_dispose` |
 | One writer per workspace | `Store::lock` (flock) | `a_second_operator_cannot_hold_the_workspace`, `a_lock_held_elsewhere_is_a_conflict` |
-| The fixture is reproducible | fixed clock, derived keys, no clock in pages | `the_seed_is_byte_identical_across_runs` |
-| The site matches the CLI | drift check in CI | `Site drift check` job |
+| The fixture is reproducible | fixed clock, derived keys | `the_seed_is_byte_identical_across_runs` |
 | Independent verification agrees | `verify_log.py` | `the_python_verifier_agrees_with_the_rust_chain` |
 
 ---
@@ -411,36 +405,41 @@ Fixture facts: 151 CSV rows → 150 roster (1 dropped), 12 GATE / 129 FIELD / 8 
 1 missing disposition, 147 sends, 3 blocked (mismatch, missing QA, missing
 disposition), 1 stale `TEXT_VERSION`, fingerprint `64f9e1f9…`, head `d347a639…`.
 
-### Regenerate the site
+### Regenerating the fixture
 
 ```bash
-./scripts/build-site.sh                    # deterministic; no diff if nothing changed
-LEDGER_BUMP_PROVENANCE=1 ./scripts/build-site.sh   # after changing pages
+rm -rf /tmp/pilot && ./target/release/ledger demo seed --data /tmp/pilot --force --record
 ```
 
-The script builds both feature sets, seeds the fixture, exports `format/gates/audit/…`,
-writes `lab.js`/`app.js`/`app.css`, starts `ledger ui` on port 8731, logs in with the
-one-time token, captures `/` and `/governance` with rewritten links and the snapshot
-banner, then optionally records a cast. `git diff -- site` must be empty afterwards in
-CI. Do not hand-edit generated pages except `site/index.html`.
+Two seeds in two directories must produce the same fingerprint and log head; the test
+suite asserts it. There is no build step to regenerate and nothing to commit.
 
-### Deploy
+### Working on the `web/` preview
 
-Push to `main`. Vercel serves committed `site/`. There is no `buildCommand`; if you add
-one, remember the build image has no Rust.
+```bash
+cd web && bun install --frozen-lockfile
+bun run dev                        # local dev
+bun run test                       # vitest (5 tests)
+NITRO_PRESET=vercel bun run build  # what Vercel runs; writes .vercel/output
+```
+
+The Vercel project's Root Directory is `web`, so a push to `main` deploys it and no
+`vercel.json` is read from the repo root. Without `NITRO_PRESET=vercel` the Lovable
+config builds a Cloudflare worker instead, which Vercel cannot serve.
 
 ### CI
 
-`ci.yml`: `test` (fmt, clippy all-features, clippy no-features, tests, ui tests, drift),
+`ci.yml`: `test` (fmt, clippy all-features, clippy no-features, tests, ui tests),
 `msrv` (1.85 compile), `supply-chain` (`cargo-deny`), `coverage` (per-module floors),
-plus scheduled `mutants` (digest/log/pipeline/metrics/qa/template) and `fuzz`
-(`parse_csv`, `parse_log`).
+`web` (bun install, vitest, Vercel build), plus scheduled `mutants`
+(digest/log/pipeline/metrics/qa/template) and `fuzz` (`parse_csv`, `parse_log`).
 
 ### Format changes
 
 `FORMAT_SPEC.md` is normative. A digest change is a `digest_version` bump: update the
-spec, regenerate `tests/golden.rs` constants (`LOG_HEAD`, `SEND_LOG_SHA256`,
-`DISPOSITIONS_SHA256`, `FINGERPRINT`), and re-run `verify_log.py` in the same commit.
+spec, recompute the `tests/golden.rs` constants (`LOG_HEAD`, `SEND_LOG_SHA256`,
+`DISPOSITIONS_SHA256`, `FINGERPRINT`) from a fresh fixture, and re-run `verify_log.py`
+in the same commit.
 
 ---
 
@@ -450,9 +449,6 @@ spec, regenerate `tests/golden.rs` constants (`LOG_HEAD`, `SEND_LOG_SHA256`,
 | --- | --- | --- |
 | `E0658: let expressions in this position are unstable` on 1.85 | `if let … && …` let-chain (needs 1.88) | Nested `if let`; check the MSRV job before pushing |
 | UI tests pass locally, `ConnectionReset` in CI | Test harness dropped the child's stdout after reading the banner; the server's next `println!` hit EPIPE and panicked on Linux | Hold the `BufReader` in the `Server` struct |
-| Drift check fails on every run | Provenance read `HEAD` (pages at N regenerate as N+1) | Provenance is a committed input; bump explicitly |
-| Drift check fails after a snapshot change | The UI page rendered a timestamp | Never render clocks in captured pages |
-| Snapshot script silently empties the page | Multiple `-e` after `perl -0pe` produced a syntax error | Separate `sed` stages from one `-0pe` script |
 | `expected ',', found '"'` inside a `format!` raw string | HTML contained `"#` (e.g. `href="#content"`), terminating `r#"…"#` | Use single quotes in that attribute |
 | `cargo deny` passes but `--all-features` clippy breaks bans | cargo-deny is feature-sensitive | Decide which graph you mean; keep a no-feature clippy leg |
 | Sign-offs reported both invalid and stale | Signature checked against the *current* hash instead of the recorded one | Verify against `artefact_hash`; staleness is a separate check |
@@ -465,9 +461,10 @@ spec, regenerate `tests/golden.rs` constants (`LOG_HEAD`, `SEND_LOG_SHA256`,
 
 ## 10. Current state and open work
 
-Done: v1, V2, V3, V4 (all but three items below), V5 phases 1, 2 and 5, V5 phase 3
-(identities, signing, RBAC, drift, backups), Phase 4 slices A–C and the core of D/E,
-product site, `/lab`, workspace snapshots, the full web review.
+Done: v1, V2, V3 (fixture only), V4 (all but three items below), V5 phases 1, 2 and 5,
+V5 phase 3 (identities, signing, RBAC, drift, backups), Phase 4 slices A–C and the core
+of D/E. Removed on request: the static artefact site and its generator. Added in its
+place: `web/`, the Lovable TanStack Start preview, live on Vercel.
 
 Open, with the obstacle named:
 
@@ -476,8 +473,8 @@ Open, with the obstacle named:
    V2 headers today.
 2. **Phase 4.5 `.eml`/zip dispatch screen** — `eml::write_batch` exists; the `zip` crate
    is deliberately not yet a dependency.
-3. **Phase 4.6 one-click re-approval and snapshot button** — `artefact_status` is
-   displayed; the POST handlers are not written.
+3. **Phase 4.6 one-click re-approval** — `artefact_status` is displayed; the POST
+   handler is not written.
 4. **Delivery confirmation** — nothing moves `queued` → `sent`; needs a chained
    confirmation event before the "confirmed Sent" KPI can be non-zero.
 5. **`--json` on all 25 commands** — 11 emit JSON.
@@ -485,11 +482,7 @@ Open, with the obstacle named:
 7. **Wasm demo (V5 5.3)** — needs the `ledger-core` split.
 8. **Proptest (V4 5.3)** — not written.
 9. **State-document `schema_version` (V4 4.4)** — only the send log is versioned.
-10. **CSP `style-src` still allows `'unsafe-inline'`** because every page inlines its
-    stylesheet; hashed styles are the follow-up.
-11. **Filter-pill target size** is just under 24 px.
-12. **No published release** — `release.yml` exists on tags but no tag has been cut.
-13. **`asciinema` cast** — `/demo` is a generated transcript; the script is ready.
+10. **No published release** — `release.yml` exists on tags but no tag has been cut.
 
 ---
 
@@ -551,11 +544,8 @@ append-only; only `send_log.jsonl` is chained.
 | `LEDGER_OPERATOR` | Default operator when `--operator` is absent |
 | `LEDGER_DEBUG_IDS=1` | Reveal raw ids/emails in console output |
 | `LEDGER_ABORT_AFTER_SENDS=n` | Test-only: abort dispatch after n sends |
-| `LEDGER_BUMP_PROVENANCE=1` | Rewrite `site/provenance.json` from `HEAD` |
-| `LEDGER_BUILD_SHA`, `LEDGER_GENERATED_AT` | Override site provenance |
-| `LEDGER_UI_PORT` | Snapshot port in `build-site.sh` (default 8731) |
 
-### UI routes
+### UI routes (`ledger ui`, `--features ui`)
 
 `GET /` (triage + 4 KPIs) · `GET /governance` · `GET /audit` ·
 `POST /api/preview` · `POST /api/dispose` · `POST /api/dispose/batch`.
@@ -588,15 +578,14 @@ Plus: 100% of GATE and 10% of FIELD/ADMIN need a recorded second-person QA check
   the log was not rewritten.
 - **Torn tail** — a partial final line, the trace of a crash mid-append; refused, never
   repaired, only quarantined deliberately.
-- **Provenance** — commit SHA + generation time + fixture fingerprint on a generated page.
 
 ---
 
 ## 13. How this file was produced
 
 Compressed from the seven spec documents (`plan.md`, `V2.md`, `V3.md`, `V4.md`, `V5.md`,
-`Web.md`, `website.md`), the implementation (`src/`, 33 modules), the deployment and CI
-configuration, and the full build conversation — including the contradictions found in
-each spec, the decisions taken to resolve them, and the failures that only showed up in
-CI. Where this file and a spec disagree, the spec's *intent* and the code's *behaviour*
-win; record the divergence here rather than silently following either.
+`Web.md`, `website.md`), the implementation (`src/`, 33 modules), the CI configuration,
+and the full build conversation — including the contradictions found in each spec, the
+decisions taken to resolve them, and the failures that only showed up in CI. Where this
+file and a spec disagree, the spec's *intent* and the code's *behaviour* win; record the
+divergence here rather than silently following either.

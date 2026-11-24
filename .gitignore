@@ -2,5 +2,12 @@
 /ledger-data
 *.tmp
 .DS_Store
-.vercel
-.vercel
+
+# web/ — Lovable UI preview (TanStack Start, bun)
+web/node_modules/
+web/.output/
+web/.vercel/
+web/.wrangler/
+web/.nitro/
+web/.tanstack/
+web/dist/

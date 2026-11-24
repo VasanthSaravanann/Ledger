@@ -23,10 +23,6 @@ jobs:
       - run: cargo test --locked
       - name: UI feature builds and tests
         run: cargo test --locked --features ui
-      - name: Site drift check
-        run: |
-          ./scripts/build-site.sh
-          git diff --exit-code -- site
 
   msrv:
     runs-on: ubuntu-latest
@@ -36,6 +32,23 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85.0
       - run: cargo build --locked --all-targets
       - run: cargo test --locked --no-run
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+      # Same build Vercel runs: without the preset it emits a Cloudflare worker.
+      - run: bun run build
+        env:
+          NITRO_PRESET: vercel
 
   supply-chain:
     runs-on: ubuntu-latest

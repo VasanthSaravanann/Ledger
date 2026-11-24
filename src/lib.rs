@@ -21,8 +21,7 @@
 //!   out of console output.
 //! - [`checklist`] tracks the operational tasks that a person, not a program,
 //!   has to sign off.
-//! - [`demo`] builds the deterministic synthetic fixture, and [`site`] writes the
-//!   artefact pages from the loaded workspace at build time.
+//! - [`demo`] builds the deterministic synthetic fixture.
 
 pub mod anchor;
 pub mod approval;
@@ -50,7 +49,6 @@ pub mod redact;
 pub mod requisition;
 pub mod retention;
 pub mod review;
-pub mod site;
 pub mod store;
 pub mod template;
 pub mod text;
