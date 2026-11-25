@@ -183,7 +183,7 @@ In all three cases: update this file's status line, commit, and tell the human e
 what to sign next.
 
 ```text
-STATUS 2026-11-25: 0/19 done · 0 blocked · 3 human · 0 awaiting evidence
+STATUS 2026-11-25: 13/19 done · 0 blocked · 6 awaiting a person · 0 awaiting evidence
 ```
 
 ## 11. Risks the loop cannot remove

@@ -29,6 +29,28 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### Record the autonomous run: 13 of 19 tasks done
+
+The plan drained its machine work. `node scripts/plan-next.mjs` now prints
+`STOP=awaiting-human`: all 13 `auto` tasks are `done` (P0-1…P0-5, P1-1, P1-2, P1-4…P1-6,
+P2-1…P2-3, P2-5), none is blocked, and the six left are the ones a machine may not
+finish — P0-4 (access review), P0-6 (purge rehearsal) and P0-7 (the 13 checklist items)
+are signatures and decisions; P1-3 needs the escalation phone answered; P2-4 needs branch
+protection turned on; P2-6 needs one recorded design decision.
+
+What the run left behind, all checkable: `delivery.jsonl` and the only path from `queued`
+to confirmed; `docs/key-custody.md`, `docs/monitoring.md`, `docs/incident-runbook.md`,
+`docs/dsar.md`, `docs/evidence.md`, `docs/restore-drill.md`; `scripts/restore-drill.sh`,
+`scripts/verify-chain.sh`, `scripts/dsar-drill.sh`, `scripts/evidence-pack.sh`; a daily
+verification workflow and a weekly dependency-update workflow; `--json` on every command;
+schema versions on every state document; three proptest suites; and release `v0.1.0` with
+three targets and checksums.
+
+One red push (P1-5) is recorded above: its changelog entry was missing and the next
+commit added it. The status line in `PRODUCTION.md` now reads 13/19. Nothing in this run
+signed for a person, and `plan-done.mjs` refused to close any of the six that would need
+one.
+
 ### P2-5 Automate dependency updates behind the same gate
 
 `cargo-deny` and the MSRV job existed, but nothing brought updates forward, so the tree
@@ -142,6 +164,12 @@ what and whether it is tombstoned in place or only with the workspace, why backu
 and what the drill does not prove (identity, replicas, jurisdiction, erasing one person
 from a chain). `purge` is a mutating command even when it only previews, so the drill
 reads an approver from the fixture's registry rather than assuming a name.
+
+This commit's CI run was red for one reason: its CHANGELOG entry was missing (the
+insertion in the previous step missed its anchor and the replacement silently did
+nothing), and `scripts/check-docs.mjs` refused the push. The code, the drill and the docs
+were green; the entry was added in P1-6. Recorded here because a red run should not
+disappear from the log.
 
 ### P1-4 Cut and verify release v0.1.0
 
