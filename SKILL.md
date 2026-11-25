@@ -16,8 +16,9 @@ description: >-
 # Ledger — project skill
 
 The operating manual: what the product is, what must not break, how to run and ship it.
-History lives in `CHANGELOG.md`; what is left before a real pilot lives in
-`PRODUCTION.md`; how a stranger reproduces it lives in `README.md`.
+The **complete log** — every commit, in order, with the reasoning — is `CHANGELOG.md`;
+what is left before a real pilot lives in `PRODUCTION.md`; how a stranger reproduces it
+lives in `README.md`. This file carries the current state (§2) and points at the rest.
 
 ## 1. What this is
 
@@ -38,15 +39,41 @@ hosted tenancy, no Windows binary, no generated static site.
 
 ## 2. Current state (verified, not assumed)
 
-- Rust 2024, MSRV **1.85** (compiled in CI), 11 direct crates, **no network crates** in
-  the default graph. Optional `ui` feature adds axum + tokio.
-- 34 modules, ~15.3k lines, **155 tests** (163 with `--features ui`).
-- 26 top-level CLI commands, `--json` on every one (a single global flag).
-- Web: 6 routes, 11 tests, eslint 0 errors (7 known `react-refresh` warnings).
+- Rust 2024, MSRV **1.85** (compiled in CI), 11 direct crates plus one dev-dependency
+  (`proptest`), **no network crates** in the default graph. Optional `ui` feature adds
+  axum + tokio.
+- 34 modules, ~15.3k lines, **155 tests** (163 with `--features ui`), including three
+  proptest suites.
+- 26 top-level CLI commands, `--json` on every one (a single global flag: one object on
+  stdout, nothing on stderr).
+- Web: 6 routes, 11 tests, eslint 0 errors (7 known `react-refresh` warnings). The skip
+  link is the first tab stop on every route, and the checker passes `skip-link`,
+  `focus-ring`, `focus-visible`, `focus-hidden`, `tap-size` and `menu-toggle` at 390
+  and 320.
+- Every state document carries `schema_version: 1`; a newer version fails closed and
+  `ledger migrate` upgrades a version-0 workspace without touching the chained logs.
 - Deployed at **https://ledger-pilot-chi.vercel.app** from `web/` on every push to
   `main`; CI runs `test`, `msrv`, `web`, `supply-chain`, `coverage`, plus weekly
-  `mutants` and `fuzz`.
+  `mutants` and `fuzz`. `verify` runs daily at 06:17 UTC; `update` opens grouped
+  dependency PRs weekly at 05:00 UTC.
+- Release **v0.1.0** exists: three targets, 14 assets, a `.sha256` per artefact and
+  `verify_log.py` inside every tarball.
 - The pilot checklist is **0/13 signed** — every legal act is still human and undone.
+
+### The plan, after the autonomous run
+
+`node scripts/plan-next.mjs` prints `STOP=awaiting-human`: **13 of 19 tasks done, 0
+blocked**. The full commit-by-commit history is `CHANGELOG.md`; the machine's end state
+is the status line in `PRODUCTION.md` §10.
+
+- **Shipped by the loop:** P0-1 delivery confirmation · P0-2 restore drill · P0-3 key
+  custody · P0-5 chain alarm · P1-1 `--json` everywhere · P1-2 incident runbook · P1-4
+  release v0.1.0 · P1-5 DSAR drill · P1-6 state versioning · P2-1 proptest · P2-2
+  evidence pack · P2-3 accessibility · P2-5 dependency updates.
+- **Left for a person:** P0-4 access review (sign) · P0-6 purge rehearsal (Legal) ·
+  P0-7 the 13 checklist items · P1-3 escalation SLA proof · P2-4 branch protection ·
+  P2-6 the design-gate decision. `plan-done.mjs` refuses to close any of them without
+  `--signed-by` and a real evidence file, which is the point.
 
 ## 3. Repository map
 
@@ -67,6 +94,9 @@ hosted tenancy, no Windows binary, no generated static site.
 | `verify_log.py` | stdlib-only independent verifier (chain, digests, time order) |
 | `FORMAT_SPEC.md`, `THREAT_MODEL.md` | normative bytes; what the chain does and does not prove |
 | `tests/`, `fuzz/`, `coverage-floors.toml`, `deny.toml` | golden fixtures, fuzz targets, per-module coverage floors, supply chain |
+| `scripts/` | plan runners and `check-docs.mjs`; `restore-drill.sh`, `verify-chain.sh`, `dsar-drill.sh`, `evidence-pack.sh` |
+| `docs/` | key custody, monitoring, incident runbook, DSAR answer, evidence pack, restore drill |
+| `.github/workflows/` | `ci` (push/PR + weekly mutants, fuzz), `release` (tag), `verify` (daily), `update` (weekly) |
 
 ## 4. How a rejection is recorded
 
@@ -132,18 +162,27 @@ tail) · `4` lock contention.
 | One writer per workspace | `Store::lock` (flock) |
 | The fixture is reproducible | fixed clock, derived keys → `e0a91f66…`, head `d347a639…` |
 | Independent verification agrees | `verify_log.py` vs the Rust chain |
+| A state document from a newer build fails closed | `Store::load`, `migrate::inspect` |
+| Every command emits one JSON object under `--json` | global flag + `tests/cli_json.rs` |
+| The skip link is the first tab stop; phone controls are 44px | `accessibility.test.tsx` + the checker |
 
 ## 7. Running and shipping
 
 ```bash
 cargo fmt --all && cargo clippy --all-targets --all-features -- -D warnings
-cargo test --locked                 # 136
-cargo test --locked --features ui   # 144
+cargo test --locked                 # 155
+cargo test --locked --features ui   # 163
 cargo build --release --features ui # build the ui feature last: plain build drops it
 
 ./target/release/ledger demo seed --data /tmp/pilot --force --record
 ./verify_log.py /tmp/pilot/send_log.jsonl          # OK, 147 entries
 ./target/release/ledger --operator <name> ui --port 8420   # loopback workspace
+
+bash scripts/restore-drill.sh                # backup, restore, verify, tamper control
+bash scripts/verify-chain.sh --data /tmp/pilot   # the alarm, by hand
+bash scripts/dsar-drill.sh                   # the data-subject answer on the fixture
+bash scripts/evidence-pack.sh                # evidence/<date>/ + index.json with digests
+node scripts/check-docs.mjs                  # every commit logged, every quoted number true
 ```
 
 Web:
@@ -171,6 +210,11 @@ Deploy is a push to `main`: Vercel builds `web/` (Root Directory `web`, install
 | plates show a stale UI | screenshots are committed | re-shoot `web/public/product/*.jpg` when the shell changes |
 | `bun run lint` hangs | eslint walking `.vercel/output` | keep build dirs in `eslint.config.js` ignores |
 | favicon 404 | icon deleted | `public/favicon.svg`, `/favicon.ico` 308s to it |
+| release job fails with `configuration 'macos-14-arm64…' is not supported` | the runner label is unavailable for this repo | `macos-15` (arm64) and `macos-15-intel` (x86_64) |
+| `unexpected argument '--json'` | `--json` is global, not per subcommand | put it after any command: `ledger gate list --json` |
+| `test -s evidence/index.json` fails | the pack has never run; `evidence/` is git-ignored | `bash scripts/evidence-pack.sh` |
+| checker: “focus lands on something you cannot see” | an off-canvas drawer still participates in the tab order | `visibility: hidden` when closed, switched immediately (no delayed transition) |
+| checker: `focus-ring` FAIL on `outline-none` utilities | Tailwind's utility removes the outline and the checker cannot see a replacement | do not use `focus*:outline-none`; define one `:focus-visible` ring in `styles.css` |
 
 ## 9. Working with an agent on this repo
 
@@ -205,6 +249,10 @@ file — never write evidence on someone's behalf. Two failed attempts block a t
 blocked in a row ends the run. `STOP=awaiting-human` is the correct machine end state:
 what remains is signatures, a mailbox and a lawyer.
 
+**State:** 13/19 done, 0 blocked, 6 awaiting a person (P0-4, P0-6, P0-7, P1-3, P2-4,
+P2-6). Do not invent work to keep the loop alive; when `plan-next.mjs` says
+`STOP=awaiting-human`, the next commit is a signature, not a script.
+
 ## 11. Where everything is written down
 
 | Question | File |
@@ -217,3 +265,9 @@ what remains is signatures, a mailbox and a lawyer.
 | What does the chain *not* prove? | `THREAT_MODEL.md` |
 | How do I change it safely? | `CONTRIBUTING.md` |
 | How does the preview work? | `web/README.md` |
+| How do I restore a backup? | `docs/restore-drill.md` |
+| Who holds which key, and what does rotation cost? | `docs/key-custody.md` |
+| The alarm fired at 2am — what now? | `docs/incident-runbook.md` |
+| Who is paged, and what does the daily job check? | `docs/monitoring.md` |
+| What do I answer on a data-subject request? | `docs/dsar.md` |
+| What goes to the auditor, and how is it read? | `docs/evidence.md` |

@@ -29,6 +29,24 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### Update the project skill for the completed plan run
+
+`SKILL.md` was still the manual written before the loop ran: §7 claimed 136 and 144 tests,
+§2 said nothing about the plan's state, and the repository map had no `scripts/`, `docs/`
+or `.github/workflows/` row. It now carries the current state — 155 tests (163 with
+`ui`), `--json` on every command, `schema_version` on every state document, release
+v0.1.0, the daily `verify` and weekly `update` jobs — and a short log of the run: the 13
+tasks shipped, the 6 that await a person, and the reminder that `STOP=awaiting-human` is
+the end state, not a reason to invent work.
+
+Also updated: the invariant table gained state versioning, the JSON contract and the
+skip-link/tap-size floor; the commands block runs the four new scripts; the gotcha table
+gained the `macos-15`/`macos-15-intel` runner labels, the global `--json`, the ignored
+`evidence/` directory, the off-canvas drawer that must leave the tab order, and the
+`outline-none` utility that makes the checker's `focus-ring` fail. §11 now points at the
+six new documents. The **complete log** stays `CHANGELOG.md`; `SKILL.md` now says so in
+its first paragraph.
+
 ### Record the autonomous run: 13 of 19 tasks done
 
 The plan drained its machine work. `node scripts/plan-next.mjs` now prints
