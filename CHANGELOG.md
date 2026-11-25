@@ -40,11 +40,20 @@ plus the filename to verify against the `.sha256`. `generate_release_notes` stil
 GitHub's own summary after them.
 
 Tag `v0.1.0` points at this commit; the three targets (aarch64-apple-darwin,
-x86_64-apple-darwin, x86_64-unknown-linux-gnu) build, package and publish. The README's
-limitation row changed with it: the remaining gap is that the binary is not code-signed,
-not that no release exists. Because the gate (`gh release view v0.1.0`) can only pass
-after the tag's workflow finishes, the plan state lands in a one-line follow-up commit
-rather than the tagged one.
+x86_64-apple-darwin, x86_64-unknown-linux-gnu) build, package and publish. The first
+attempt failed before compiling anything: `macos-14` resolved to an unsupported runner
+configuration and `macos-13` never left the queue, so the matrix moved to `macos-15` and
+`macos-15-intel`. The README's limitation row changed with it: the remaining gap is that
+the binary is not code-signed, not that no release exists. Because the gate
+(`gh release view v0.1.0`) can only pass after the tag's workflow finishes, the plan state
+lands in a one-line follow-up commit rather than the tagged one.
+
+### P1-4 Record the verified v0.1.0 release
+
+The gate ran against the published release: `gh release view v0.1.0` finds 14 assets —
+three tarballs, three bare binaries, three `.sha256` files, `verify_log.py`,
+`FORMAT_SPEC.md`, `THREAT_MODEL.md` and `LICENSE`. The notes name 148 tests at the tag and
+the fixture head `d347a639…`. This commit carries only `.plan/state.json`.
 
 ### P1-2 Write the incident runbook
 
