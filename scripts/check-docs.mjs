@@ -42,12 +42,20 @@ const walk = (dir) => readdirSync(join(root, dir)).flatMap((name) => {
 });
 const modules = walk("src").filter((p) => p.endsWith(".rs")).length;
 const routes = readdirSync(join(root, "web/src/routes")).filter((f) => f.endsWith(".tsx") && f !== "__root.tsx").length;
-const jsonFlags = (readFileSync(join(root, "src/main.rs"), "utf8").match(/json: bool/g) ?? []).length;
+const mainRs = readFileSync(join(root, "src/main.rs"), "utf8");
+const commandBlock = mainRs
+  .slice(mainRs.indexOf("enum Command {"))
+  .split("\n}")[0];
+const commands = (commandBlock.match(/^    [A-Z][A-Za-z0-9]*(\(.*\))?,$/gm) ?? []).length;
+if (!/global = true\)?\]\s*\n\s*json: bool/.test(mainRs)) {
+  fail.push("`--json` is not a global flag in src/main.rs");
+}
 
 const numbers = [
   [`${modules} modules`, "module count"],
   [`${routes} routes`, "route count"],
-  [`${jsonFlags} of them`, "--json flag count"],
+  [`${commands} top-level CLI commands`, "command count"],
+  ["`--json` on every one", "global --json flag"],
 ];
 for (const [needle, what] of numbers) {
   if (!skill.includes(needle)) fail.push(`SKILL.md does not say "${needle}" (${what} in the tree)`);
@@ -95,4 +103,4 @@ if (fail.length) {
   console.error(`\ndocs: ${fail.length} mismatch(es)`);
   process.exit(1);
 }
-console.log(`docs ok · ${log.length} commits logged · ${modules} modules · ${routes} routes · ${jsonFlags} json flags · ${tests ?? "?"} tests`);
+console.log(`docs ok · ${log.length} commits logged · ${modules} modules · ${routes} routes · ${commands} commands · ${tests ?? "?"} tests`);

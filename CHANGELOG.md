@@ -29,6 +29,30 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P1-1 Emit --json from every command
+
+Eleven of 25 commands printed prose, and only that: a runbook could not consume a single
+one. `--json` is now a **global** flag on the clap tree, so `ledger status --json`,
+`ledger gate approve … --json` and `ledger --json metrics …` all work, and every command
+prints exactly one object on stdout with nothing on stderr. Every object carries
+`"command"`, the leaf that produced it. The 13 per-command flags were removed in favour
+of the one flag, and the handlers were rewritten to emit the real structure: the stored
+document for `gate list`/`templates show`/`requisition show`, the appended record for
+`disposition record`/`delivery confirm`/`qa record`, the chain report for `log verify`,
+and the computed decision for `review route`. `dispatch --json --eml` still prints one
+object: the draft manifest is a key on it, not a second document.
+
+`tests/cli_json.rs` enumerates the clap tree through `--help` — so a command added
+without the flag fails the build — and then runs 21 read commands and 2 writes against
+the fixture, parsing each output as one object and requiring an empty stderr. README
+documents the keys of all 26 commands.
+
+The sweep found a real defect: `review criteria` was permitted by no role at all, so once
+an operator was registered the command could never run. `Role::permits` now grants
+`review` to coordinators, next to `delivery`. `scripts/check-docs.mjs` now counts the
+`Command` variants instead of the old per-command flag count, so the number in `SKILL.md`
+still means something.
+
 ### P0-5 Schedule chain verification with an alarm that fires
 
 Corruption used to be discovered by whoever happened to run a command. `scripts/verify-chain.sh`

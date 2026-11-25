@@ -61,6 +61,7 @@ impl Role {
                     | "qa"
                     | "dispatch"
                     | "delivery"
+                    | "review"
                     | "reply"
                     | "signal"
                     | "anchor"

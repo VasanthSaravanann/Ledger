@@ -340,9 +340,9 @@ Honest list; each one is a decision, not an oversight.
 **Exit codes:** `0` ok · `1` internal/IO · `2` blocked (`--allow-blocked` opts out) ·
 `3` invalid input, schema or state (including a torn tail) · `4` lock contention.
 
-**Roles:** `coordinator` (import, disposition, QA, dispatch, reply, signal, anchor, log) ·
-`approver` (gate, templates, playbook, requisition, governance, purge, migrate,
-checklist, operator, init, demo seed) · `auditor` (read-only).
+**Roles:** `coordinator` (import, disposition, QA, dispatch, delivery, review, reply,
+signal, anchor, log) · `approver` (gate, templates, playbook, requisition, governance,
+purge, migrate, checklist, operator, init, demo seed) · `auditor` (read-only).
 
 **Metric bands**, fixed before the pilot: reply volume per 1,000 sends `<30 / 30–80 / >80`;
 form-block rate `<10% / 10–25% / >25%`; gate-mismatch rate `<2% / 2–10% / >10%`;
@@ -353,6 +353,59 @@ feasibility was agreed in one session.
 flag discrimination exposure; form-block red → capture-discipline middleware;
 form-block green with criteria agreed → reassess venture viability; reply volume red →
 scope reply triage; criteria not agreed → validate criteria first.
+
+## JSON output
+
+`--json` is a global flag: `ledger status --json`, `ledger gate approve … --json`, and
+`ledger --json metrics …` all work. When it is set, the command prints **exactly one
+JSON object** on stdout and nothing on stderr; exit codes do not change. Every object
+carries `"command"`, the leaf command that produced it, so a runbook can switch on it.
+
+| Command | Keys beside `command` |
+| --- | --- |
+| `init` | `workspace`, `seeded[]` |
+| `demo seed` | `summary` — the fixture numbers, head, fingerprint |
+| `status` | `tasks{signed,total,items[]}`, `artefacts{...}`, `evidence{...}`, `requisitions[]` |
+| `governance show`, `set` | `policy{retention_days,escalation_owner,escalation_sla_hours}` |
+| `gate list` | `library` — copies and approvals |
+| `gate approve` | `actor`, `role`, `library` |
+| `gate bump-version` | `gate`, `version`, `library` |
+| `requisition create`, `fact`, `comparative`, `approve` | `requisition`; `key` for `fact`; `paragraph` for `comparative`; `comparative`, `role`, `still_needed` for `approve` |
+| `requisition show` | `requisition`, `gates[]`, `comparative`, `blocking_issues[]` |
+| `requisition list` | `requisitions[]` |
+| `templates show`, `approve` | `templates`; `role` when approving |
+| `playbook show`, `approve` | `playbook`; `role` when approving |
+| `playbook script` | `scenario`, `text`, `escalation` |
+| `ats import` | `requisition`, `imported`, `with_knockouts`, `excluded_not_initial_screen` |
+| `disposition record` | `record` |
+| `disposition list`, `history` | `requisition` or `application`, `records[]` |
+| `qa record` | `recorded`, `requisition`, `application`, `scope` |
+| `qa list` | `requisition`, `records[]` |
+| `dispatch` | `mode`, `status`, `sent`, `previews`, `blocked`, `blocked_reasons[]`, and `eml` when drafts were written |
+| `delivery confirm` | `confirmation` — the new chained entry |
+| `delivery list` | `entries`, `confirmations[]` |
+| `log verify` | `valid`, `entries`, `head` |
+| `log quarantine` | `report` |
+| `log export` | `requisition`, `rows[]` (or `rows` count and `out` when `--out` was given) |
+| `reply record` | `requisition`, `recorded`, `scenario`, `escalation` for a discrimination concern |
+| `signal record` | `requisition`, `value`, `recorded` |
+| `metrics` | `metrics` — sends, confirmed, queued, replies, blocked and the five ratings |
+| `review criteria` | `record` |
+| `review route` | `routing` — metrics, criteria and the ordered decisions |
+| `checklist done` | `completion`, `progress{signed,total}` |
+| `checklist show` | `signed`, `total`, `tasks[]` |
+| `purge` | `report` |
+| `migrate` | `report` |
+| `anchor` | `anchor` — entries, head, operator, receipt path |
+| `find` | `handle`, `matches[]` |
+| `operator register` | `operator`, `keyfile` |
+| `operator list` | `operators[]` |
+| `operator whoami` | `operator` |
+| `verify-signatures` | `report` — signed, unsigned, invalid and every artefact verdict |
+| `ui` | `url`, `operator`, then the server runs |
+
+`tests/cli_json.rs` enumerates the clap tree and fails if a command lacks the flag, then
+runs a fixture and parses what each command actually printed.
 
 ## Documentation
 

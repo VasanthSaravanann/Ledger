@@ -19,7 +19,7 @@ use ledger::id::{
     ApplicationId, CandidateEmail, DecisionMakerId, DispositionId, Mailbox, QaId, RecruiterId,
     RequisitionId, SendId, TemplateKind, TextVersion,
 };
-use ledger::log::{BlockedLog, DeliveryStatus, SendLog};
+use ledger::log::{BlockedLog, DeliveryStatus, SendEntry, SendLog};
 use ledger::metrics::{Metrics, Replies, Reply, Signals};
 use ledger::pipeline::{Dispatch, DispatchReport, Mode, dispatch};
 use ledger::playbook::{Playbook, Scenario};
@@ -57,6 +57,9 @@ struct Cli {
     /// operator.
     #[arg(long, global = true, value_name = "NAME")]
     operator: Option<String>,
+    /// Print one JSON object on stdout and no prose. Every command accepts it.
+    #[arg(long, global = true)]
+    json: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -162,10 +165,7 @@ struct OperatorRegisterArgs {
 }
 
 #[derive(Debug, Args)]
-struct VerifySignaturesArgs {
-    #[arg(long)]
-    json: bool,
-}
+struct VerifySignaturesArgs {}
 
 #[derive(Debug, Args)]
 struct PurgeArgs {
@@ -177,8 +177,6 @@ struct PurgeArgs {
     dry_run: bool,
     #[arg(long)]
     operator: Option<String>,
-    #[arg(long)]
-    json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -188,8 +186,6 @@ struct MigrateArgs {
     yes: bool,
     #[arg(long)]
     operator: Option<String>,
-    #[arg(long)]
-    json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -199,8 +195,6 @@ struct AnchorArgs {
     git_commit: bool,
     #[arg(long)]
     operator: Option<String>,
-    #[arg(long)]
-    json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -208,8 +202,6 @@ struct FindArgs {
     /// The handle printed in an error, for example #a1b2c3d4.
     #[arg(long)]
     hash: String,
-    #[arg(long)]
-    json: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -226,9 +218,6 @@ struct DemoSeedArgs {
     /// Also commit the sends and the GATE-02 version bump.
     #[arg(long)]
     record: bool,
-    /// Print the summary as JSON.
-    #[arg(long)]
-    json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -535,9 +524,6 @@ struct DispatchArgs {
     /// Write one RFC 5322 draft per send into this directory, plus a manifest.
     #[arg(long, value_name = "DIR")]
     eml: Option<PathBuf>,
-    /// Print the run as JSON.
-    #[arg(long)]
-    json: bool,
     /// Exit 0 even when attempts were blocked (exit 2 is the default for a commit).
     #[arg(long)]
     allow_blocked: bool,
@@ -556,17 +542,10 @@ struct DeliveryConfirmArgs {
     /// The send-log id that is now confirmed delivered, e.g. SND-000001.
     #[arg(long)]
     send_id: String,
-    /// Print the appended entry as JSON.
-    #[arg(long)]
-    json: bool,
 }
 
 #[derive(Debug, Args)]
-struct DeliveryListArgs {
-    /// Print the chain as JSON.
-    #[arg(long)]
-    json: bool,
-}
+struct DeliveryListArgs {}
 
 #[derive(Debug, Subcommand)]
 enum LogCommand {
@@ -579,11 +558,7 @@ enum LogCommand {
 }
 
 #[derive(Debug, Args)]
-struct LogVerifyArgs {
-    /// Print the verification as JSON.
-    #[arg(long)]
-    json: bool,
-}
+struct LogVerifyArgs {}
 
 #[derive(Debug, Args)]
 struct LogQuarantineArgs {
@@ -596,9 +571,6 @@ struct LogQuarantineArgs {
     /// Operator name; defaults to LEDGER_OPERATOR, then USER.
     #[arg(long)]
     operator: Option<String>,
-    /// Print the report as JSON.
-    #[arg(long)]
-    json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -652,9 +624,6 @@ struct SignalRecordArgs {
 struct MetricsArgs {
     #[arg(long)]
     requisition: String,
-    /// Print as JSON.
-    #[arg(long)]
-    json: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -682,9 +651,6 @@ struct ReviewCriteriaArgs {
 struct ReviewRouteArgs {
     #[arg(long)]
     requisition: String,
-    /// Print as JSON.
-    #[arg(long)]
-    json: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -719,10 +685,10 @@ fn main() -> std::process::ExitCode {
 fn execute(cli: Cli) -> Result<()> {
     ledger::redact::set_debug_ids(cli.debug_ids);
     let store = Store::open(&cli.data)?;
-    run(&store, cli.command, cli.operator.as_deref())
+    run(&store, cli.command, cli.operator.as_deref(), cli.json)
 }
 
-fn run(store: &Store, command: Command, explicit_operator: Option<&str>) -> Result<()> {
+fn run(store: &Store, command: Command, explicit_operator: Option<&str>, json: bool) -> Result<()> {
     // Read-only commands never take the lock; everything else does, so two
     // operators cannot interleave writes into the same workspace.
     let read_only = is_read_only(&command);
@@ -777,33 +743,35 @@ fn run(store: &Store, command: Command, explicit_operator: Option<&str>) -> Resu
     }
 
     let outcome = match command {
-        Command::Init => init(store),
-        Command::Demo(DemoCommand::Seed(args)) => demo_seed(store, &args),
-        Command::Status(args) => status(store, &args),
-        Command::Governance(command) => governance(store, command),
-        Command::Gate(command) => gate(store, command, &actor),
-        Command::Requisition(command) => requisition(store, command, &actor),
-        Command::Templates(command) => templates(store, command, &actor),
-        Command::Playbook(command) => playbook(store, command, &actor),
-        Command::Ats(AtsCommand::Import(args)) => ats_import(store, &args),
-        Command::Disposition(command) => disposition(store, command, explicit_operator, &registry),
-        Command::Qa(command) => qa(store, command),
-        Command::Dispatch(args) => dispatch_command(store, &args),
-        Command::Delivery(command) => delivery_command(store, command, &actor),
-        Command::Log(command) => log(store, command),
-        Command::Reply(ReplyCommand::Record(args)) => reply_record(store, &args),
-        Command::Signal(SignalCommand::Record(args)) => signal_record(store, &args),
-        Command::Metrics(args) => metrics_command(store, &args),
-        Command::Review(command) => review(store, command),
-        Command::Checklist(command) => checklist(store, command),
-        Command::Purge(args) => purge(store, &args),
-        Command::Migrate(args) => migrate(store, &args),
-        Command::Anchor(args) => anchor(store, &args),
-        Command::Find(args) => find(store, &args),
-        Command::Operator(command) => operator(store, command, explicit_operator),
-        Command::VerifySignatures(args) => verify_signatures(store, &args),
+        Command::Init => init(store, json),
+        Command::Demo(DemoCommand::Seed(args)) => demo_seed(store, &args, json),
+        Command::Status(args) => status(store, &args, json),
+        Command::Governance(command) => governance(store, command, json),
+        Command::Gate(command) => gate(store, command, &actor, json),
+        Command::Requisition(command) => requisition(store, command, &actor, json),
+        Command::Templates(command) => templates(store, command, &actor, json),
+        Command::Playbook(command) => playbook(store, command, &actor, json),
+        Command::Ats(AtsCommand::Import(args)) => ats_import(store, &args, json),
+        Command::Disposition(command) => {
+            disposition(store, command, explicit_operator, &registry, json)
+        }
+        Command::Qa(command) => qa(store, command, json),
+        Command::Dispatch(args) => dispatch_command(store, &args, json),
+        Command::Delivery(command) => delivery_command(store, command, &actor, json),
+        Command::Log(command) => log(store, command, json),
+        Command::Reply(ReplyCommand::Record(args)) => reply_record(store, &args, json),
+        Command::Signal(SignalCommand::Record(args)) => signal_record(store, &args, json),
+        Command::Metrics(args) => metrics_command(store, &args, json),
+        Command::Review(command) => review(store, command, json),
+        Command::Checklist(command) => checklist(store, command, json),
+        Command::Purge(args) => purge(store, &args, json),
+        Command::Migrate(args) => migrate(store, &args, json),
+        Command::Anchor(args) => anchor(store, &args, json),
+        Command::Find(args) => find(store, &args, json),
+        Command::Operator(command) => operator(store, command, explicit_operator, json),
+        Command::VerifySignatures(_) => verify_signatures(store, json),
         #[cfg(feature = "ui")]
-        Command::Ui(args) => ui(store, &args, explicit_operator),
+        Command::Ui(args) => ui(store, &args, explicit_operator, json),
     };
 
     // Every mutating command that succeeded leaves an operator record. The argv is
@@ -881,22 +849,61 @@ fn redacted_argv() -> String {
         .join(" ")
 }
 
-fn init(store: &Store) -> Result<()> {
+/// Prints exactly one JSON object, stamped with the command that produced it.
+fn emit_json(command: &str, fields: serde_json::Value) -> Result<()> {
+    let mut object = match fields {
+        serde_json::Value::Object(object) => object,
+        _ => return Err(Error::invalid("json", "a command must emit one object")),
+    };
+    object.insert(
+        "command".to_owned(),
+        serde_json::Value::String(command.to_owned()),
+    );
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::Value::Object(object))?
+    );
+    Ok(())
+}
+
+fn init(store: &Store, json: bool) -> Result<()> {
+    let mut seeded: Vec<&str> = Vec::new();
     if store.load::<GateLibrary>(store::GATE_LIBRARY)?.is_none() {
         GateLibrary::seed().save(store)?;
-        println!("seeded 5 gate blocks at v1.0");
+        seeded.push(store::GATE_LIBRARY);
+        if !json {
+            println!("seeded 5 gate blocks at v1.0");
+        }
     }
     if store.load::<Templates>(store::TEMPLATES)?.is_none() {
         Templates::seed().save(store)?;
-        println!("seeded templates A, B, C at v1.0");
+        seeded.push(store::TEMPLATES);
+        if !json {
+            println!("seeded templates A, B, C at v1.0");
+        }
     }
     if store.load::<Playbook>(store::PLAYBOOK)?.is_none() {
         Playbook::seed().save(store)?;
-        println!("seeded 5 reply scripts");
+        seeded.push(store::PLAYBOOK);
+        if !json {
+            println!("seeded 5 reply scripts");
+        }
     }
     if store.load::<Policy>(store::POLICY)?.is_none() {
         Policy::default().save(store)?;
-        println!("seeded retention and escalation policy");
+        seeded.push(store::POLICY);
+        if !json {
+            println!("seeded retention and escalation policy");
+        }
+    }
+    if json {
+        return emit_json(
+            "init",
+            serde_json::json!({
+                "workspace": store.root().display().to_string(),
+                "seeded": seeded,
+            }),
+        );
     }
     println!("\nworkspace: {}", store.root().display());
     println!("\nnext steps:");
@@ -915,23 +922,25 @@ fn init(store: &Store) -> Result<()> {
     Ok(())
 }
 
-fn status(store: &Store, args: &StatusArgs) -> Result<()> {
+fn status(store: &Store, args: &StatusArgs, json: bool) -> Result<()> {
     let checklist = Checklist::load(store)?;
     let (done, total) = checklist.progress();
-    println!("tasks signed off: {done}/{total}\n");
-    for phase in 1..=4 {
-        println!("phase {phase}");
-        for task in TASKS.iter().filter(|task| task.phase == phase) {
-            let mark = if checklist.is_done(task.id) { "x" } else { " " };
-            match checklist.completion(task.id) {
-                Some(completion) => println!(
-                    "  [{mark}] {} {:<52} {} ({})",
-                    task.id,
-                    task.title,
-                    completion.actor,
-                    completion.at.format(STAMP)
-                ),
-                None => println!("  [{mark}] {} {}", task.id, task.title),
+    if !json {
+        println!("tasks signed off: {done}/{total}\n");
+        for phase in 1..=4 {
+            println!("phase {phase}");
+            for task in TASKS.iter().filter(|task| task.phase == phase) {
+                let mark = if checklist.is_done(task.id) { "x" } else { " " };
+                match checklist.completion(task.id) {
+                    Some(completion) => println!(
+                        "  [{mark}] {} {:<52} {} ({})",
+                        task.id,
+                        task.title,
+                        completion.actor,
+                        completion.at.format(STAMP)
+                    ),
+                    None => println!("  [{mark}] {} {}", task.id, task.title),
+                }
             }
         }
     }
@@ -978,6 +987,61 @@ fn status(store: &Store, args: &StatusArgs) -> Result<()> {
         .filter(|record| keep(&record.requisition))
         .count();
 
+    let book = load_requisitions(store)?;
+    if json {
+        let tasks: Vec<serde_json::Value> = TASKS
+            .iter()
+            .map(|task| {
+                let completion = checklist.completion(task.id);
+                serde_json::json!({
+                    "id": task.id,
+                    "phase": task.phase,
+                    "title": task.title,
+                    "done": completion.is_some(),
+                    "actor": completion.map(|completion| completion.actor.clone()),
+                    "at": completion.map(|completion| completion.at.to_rfc3339()),
+                })
+            })
+            .collect();
+        let requisitions: Vec<serde_json::Value> = book
+            .iter()
+            .filter(|requisition| keep(&requisition.id))
+            .map(|requisition| {
+                serde_json::json!({
+                    "id": requisition.id.as_str(),
+                    "title": requisition.title,
+                    "employer": requisition.employer,
+                    "ready": requisition.is_ready(&library),
+                })
+            })
+            .collect();
+        return emit_json(
+            "status",
+            serde_json::json!({
+                "tasks": { "signed": done, "total": total, "items": tasks },
+                "artefacts": {
+                    "gate_copy_approved": library.is_approved(),
+                    "templates_approved": templates.is_approved(),
+                    "playbook_approved": playbook.is_approved(),
+                    "escalation_owner": if policy.is_configured() {
+                        Some(policy.escalation_owner.clone())
+                    } else {
+                        None
+                    },
+                    "retention_days": policy.retention_days,
+                },
+                "evidence": {
+                    "dispositions": dispositions,
+                    "qa_checks": qa_count,
+                    "sends": sends.len(),
+                    "blocked": blocks,
+                    "replies": reply_count,
+                },
+                "requisitions": requisitions,
+            }),
+        );
+    }
+
     println!("\nartefacts");
     println!(
         "  gate copy approved:      {}",
@@ -1008,7 +1072,6 @@ fn status(store: &Store, args: &StatusArgs) -> Result<()> {
     println!("  sends blocked:           {blocks}");
     println!("  replies received:        {reply_count}");
 
-    let book = load_requisitions(store)?;
     if !book.is_empty() {
         println!("\nrequisitions");
         for requisition in book.iter() {
@@ -1034,10 +1097,13 @@ fn status(store: &Store, args: &StatusArgs) -> Result<()> {
     Ok(())
 }
 
-fn governance(store: &Store, command: GovernanceCommand) -> Result<()> {
+fn governance(store: &Store, command: GovernanceCommand, json: bool) -> Result<()> {
     let mut policy = Policy::load(store)?;
     match command {
         GovernanceCommand::Show => {
+            if json {
+                return emit_json("governance show", serde_json::json!({ "policy": policy }));
+            }
             println!("{policy}");
             Ok(())
         }
@@ -1052,16 +1118,22 @@ fn governance(store: &Store, command: GovernanceCommand) -> Result<()> {
                 policy.set_escalation_sla_hours(hours)?;
             }
             policy.save(store)?;
+            if json {
+                return emit_json("governance set", serde_json::json!({ "policy": policy }));
+            }
             println!("{policy}");
             Ok(())
         }
     }
 }
 
-fn gate(store: &Store, command: GateCommand, actor: &Actor<'_>) -> Result<()> {
+fn gate(store: &Store, command: GateCommand, actor: &Actor<'_>, json: bool) -> Result<()> {
     match command {
         GateCommand::List => {
             let library = load_library(store)?;
+            if json {
+                return emit_json("gate list", serde_json::json!({ "library": library }));
+            }
             println!(
                 "gate library: {} blocks, approval: {}",
                 library.copies.len(),
@@ -1088,6 +1160,16 @@ fn gate(store: &Store, command: GateCommand, actor: &Actor<'_>) -> Result<()> {
             library.approve(args.actor.as_str(), role, Utc::now())?;
             actor.sign(&mut library.approval, role)?;
             library.save(store)?;
+            if json {
+                return emit_json(
+                    "gate approve",
+                    serde_json::json!({
+                        "actor": args.actor,
+                        "role": role.to_string(),
+                        "library": library,
+                    }),
+                );
+            }
             println!(
                 "recorded {role} sign-off on the gate library ({})",
                 approval_text(&library.approval)
@@ -1100,15 +1182,30 @@ fn gate(store: &Store, command: GateCommand, actor: &Actor<'_>) -> Result<()> {
             let mut library = load_library(store)?;
             library.bump_version(gate, version.clone())?;
             library.save(store)?;
+            if json {
+                return emit_json(
+                    "gate bump-version",
+                    serde_json::json!({
+                        "gate": gate.code(),
+                        "version": version,
+                        "library": library,
+                    }),
+                );
+            }
             println!("{gate} is now {version}; library sign-off cleared, re-approval required");
             Ok(())
         }
     }
 }
 
-fn requisition(store: &Store, command: RequisitionCommand, actor: &Actor<'_>) -> Result<()> {
+fn requisition(
+    store: &Store,
+    command: RequisitionCommand,
+    actor: &Actor<'_>,
+    json: bool,
+) -> Result<()> {
     match command {
-        RequisitionCommand::Create(args) => requisition_create(store, &args),
+        RequisitionCommand::Create(args) => requisition_create(store, &args, json),
         RequisitionCommand::Fact(args) => {
             let id = RequisitionId::try_from(args.id.as_str())?;
             let key = args.key.parse::<FactKey>()?;
@@ -1117,11 +1214,21 @@ fn requisition(store: &Store, command: RequisitionCommand, actor: &Actor<'_>) ->
                 .get_mut(&id)
                 .ok_or_else(|| Error::UnknownRequisition(id.clone()))?;
             requisition.set_fact(key, args.value.as_str())?;
+            let stored = requisition.clone();
             save_requisitions(store, &book)?;
+            if json {
+                return emit_json(
+                    "requisition fact",
+                    serde_json::json!({
+                        "key": key.to_string(),
+                        "requisition": stored,
+                    }),
+                );
+            }
             println!("recorded {key} for {id}");
             Ok(())
         }
-        RequisitionCommand::Comparative(args) => requisition_comparative(store, &args),
+        RequisitionCommand::Comparative(args) => requisition_comparative(store, &args, json),
         RequisitionCommand::Approve(args) => {
             let id = RequisitionId::try_from(args.id.as_str())?;
             let role = args.role.parse::<SignOffRole>()?;
@@ -1134,16 +1241,38 @@ fn requisition(store: &Store, command: RequisitionCommand, actor: &Actor<'_>) ->
                 if let Some(paragraph) = requisition.comparative.as_mut() {
                     actor.sign(&mut paragraph.approval, role)?;
                 }
+                let stored = requisition.clone();
+                save_requisitions(store, &book)?;
+                if json {
+                    return emit_json(
+                        "requisition approve",
+                        serde_json::json!({
+                            "comparative": true,
+                            "role": role.to_string(),
+                            "requisition": stored,
+                        }),
+                    );
+                }
                 println!("comparative paragraph for {id} signed by {role}");
             } else {
                 requisition.approve(args.actor.as_str(), role, Utc::now())?;
                 actor.sign(&mut requisition.approval, role)?;
-                println!(
-                    "requisition {id} copy signed by {role}; still needed: {}",
-                    join_roles(&requisition.approval)
-                );
+                let still_needed = join_roles(&requisition.approval);
+                let stored = requisition.clone();
+                save_requisitions(store, &book)?;
+                if json {
+                    return emit_json(
+                        "requisition approve",
+                        serde_json::json!({
+                            "comparative": false,
+                            "role": role.to_string(),
+                            "still_needed": still_needed,
+                            "requisition": stored,
+                        }),
+                    );
+                }
+                println!("requisition {id} copy signed by {role}; still needed: {still_needed}");
             }
-            save_requisitions(store, &book)?;
             Ok(())
         }
         RequisitionCommand::Show(args) => {
@@ -1151,6 +1280,52 @@ fn requisition(store: &Store, command: RequisitionCommand, actor: &Actor<'_>) ->
             let book = load_requisitions(store)?;
             let requisition = book.require(&id)?;
             let library = load_library(store)?;
+
+            if json {
+                let gates: Vec<serde_json::Value> = requisition
+                    .availability_report(&library)
+                    .into_iter()
+                    .map(|(gate, availability)| match availability {
+                        ledger::requisition::GateAvailability::Available => serde_json::json!({
+                            "gate": gate.code(),
+                            "label": gate.label(),
+                            "available": true,
+                            "missing": Vec::<String>::new(),
+                        }),
+                        ledger::requisition::GateAvailability::MissingFacts { missing } => {
+                            serde_json::json!({
+                                "gate": gate.code(),
+                                "label": gate.label(),
+                                "available": false,
+                                "missing": missing
+                                    .iter()
+                                    .map(ToString::to_string)
+                                    .collect::<Vec<String>>(),
+                            })
+                        }
+                    })
+                    .collect();
+                let comparative = requisition.comparative.as_ref().map(|paragraph| {
+                    serde_json::json!({
+                        "text": paragraph.text(),
+                        "version": paragraph.version.as_str(),
+                        "lint": paragraph
+                            .lint()
+                            .into_iter()
+                            .map(|issue| issue.to_string())
+                            .collect::<Vec<String>>(),
+                    })
+                });
+                return emit_json(
+                    "requisition show",
+                    serde_json::json!({
+                        "requisition": requisition,
+                        "gates": gates,
+                        "comparative": comparative,
+                        "blocking_issues": requisition.blocking_issues(&library),
+                    }),
+                );
+            }
 
             println!("{}  {}", requisition.id, requisition.title);
             println!("employer:    {}", requisition.employer);
@@ -1208,6 +1383,13 @@ fn requisition(store: &Store, command: RequisitionCommand, actor: &Actor<'_>) ->
         }
         RequisitionCommand::List => {
             let book = load_requisitions(store)?;
+            if json {
+                let requisitions: Vec<&Requisition> = book.iter().collect();
+                return emit_json(
+                    "requisition list",
+                    serde_json::json!({ "requisitions": requisitions }),
+                );
+            }
             if book.is_empty() {
                 println!("no requisitions yet");
                 return Ok(());
@@ -1226,7 +1408,7 @@ fn requisition(store: &Store, command: RequisitionCommand, actor: &Actor<'_>) ->
     }
 }
 
-fn requisition_create(store: &Store, args: &RequisitionCreate) -> Result<()> {
+fn requisition_create(store: &Store, args: &RequisitionCreate, json: bool) -> Result<()> {
     let id = RequisitionId::try_from(args.id.as_str())?;
     let reply_to = Mailbox::try_from(args.reply_to.as_str())?;
     let sender = Sender::try_new(args.sender_name.as_str(), args.sender_title.as_str())?;
@@ -1260,6 +1442,13 @@ fn requisition_create(store: &Store, args: &RequisitionCreate) -> Result<()> {
     let mut book = load_requisitions(store)?;
     book.insert(requisition)?;
     save_requisitions(store, &book)?;
+    if json {
+        let stored = book.require(&RequisitionId::try_from(args.id.as_str())?)?;
+        return emit_json(
+            "requisition create",
+            serde_json::json!({ "requisition": stored }),
+        );
+    }
     println!("created requisition {}", args.id);
     println!("gates: {}", args.gates.join(", "));
     if args.facts.is_empty() {
@@ -1271,7 +1460,7 @@ fn requisition_create(store: &Store, args: &RequisitionCreate) -> Result<()> {
     Ok(())
 }
 
-fn requisition_comparative(store: &Store, args: &RequisitionComparative) -> Result<()> {
+fn requisition_comparative(store: &Store, args: &RequisitionComparative, json: bool) -> Result<()> {
     let id = RequisitionId::try_from(args.id.as_str())?;
     let version = TextVersion::parse(&args.version)?;
     let mut book = load_requisitions(store)?;
@@ -1293,16 +1482,34 @@ fn requisition_comparative(store: &Store, args: &RequisitionComparative) -> Resu
         .as_ref()
         .map(|paragraph| paragraph.text())
         .unwrap_or_default();
+    let stored = requisition.clone();
     save_requisitions(store, &book)?;
+    if json {
+        return emit_json(
+            "requisition comparative",
+            serde_json::json!({ "requisition": stored, "paragraph": paragraph }),
+        );
+    }
     println!("elicited the comparative paragraph for {id}:\n\n{paragraph}\n");
     println!("this wording needs its own HM and Legal sign-off before dispatch");
     Ok(())
 }
 
-fn templates(store: &Store, command: TemplatesCommand, actor: &Actor<'_>) -> Result<()> {
+fn templates(
+    store: &Store,
+    command: TemplatesCommand,
+    actor: &Actor<'_>,
+    json: bool,
+) -> Result<()> {
     match command {
         TemplatesCommand::Show => {
             let templates = load_templates(store)?;
+            if json {
+                return emit_json(
+                    "templates show",
+                    serde_json::json!({ "templates": templates }),
+                );
+            }
             println!("templates approved: {}", yes_no(templates.is_approved()));
             for kind in TemplateKind::ALL {
                 let template = templates.require(kind)?;
@@ -1325,6 +1532,12 @@ fn templates(store: &Store, command: TemplatesCommand, actor: &Actor<'_>) -> Res
                 templates.sign_all(actor.registry, store, role, &operator.name)?;
             }
             templates.save(store)?;
+            if json {
+                return emit_json(
+                    "templates approve",
+                    serde_json::json!({ "role": role.to_string(), "templates": templates }),
+                );
+            }
             println!("recorded {role} sign-off on all three templates");
             if templates.is_approved() {
                 println!("templates are approved");
@@ -1342,10 +1555,13 @@ fn templates(store: &Store, command: TemplatesCommand, actor: &Actor<'_>) -> Res
     }
 }
 
-fn playbook(store: &Store, command: PlaybookCommand, actor: &Actor<'_>) -> Result<()> {
+fn playbook(store: &Store, command: PlaybookCommand, actor: &Actor<'_>, json: bool) -> Result<()> {
     match command {
         PlaybookCommand::Show => {
             let playbook = load_playbook(store)?;
+            if json {
+                return emit_json("playbook show", serde_json::json!({ "playbook": playbook }));
+            }
             println!("playbook approved: {}", yes_no(playbook.is_approved()));
             for scenario in Scenario::ALL {
                 let script = playbook.require(scenario)?;
@@ -1361,6 +1577,16 @@ fn playbook(store: &Store, command: PlaybookCommand, actor: &Actor<'_>) -> Resul
             let scenario = args.scenario.parse::<Scenario>()?;
             let playbook = load_playbook(store)?;
             let script = playbook.require(scenario)?;
+            if json {
+                return emit_json(
+                    "playbook script",
+                    serde_json::json!({
+                        "scenario": scenario.to_string(),
+                        "text": script.text,
+                        "escalation": script.escalation,
+                    }),
+                );
+            }
             println!("{}", script.text);
             if let Some(escalation) = &script.escalation {
                 println!("\nESCALATE: {escalation}");
@@ -1373,6 +1599,12 @@ fn playbook(store: &Store, command: PlaybookCommand, actor: &Actor<'_>) -> Resul
             playbook.approve(args.actor.as_str(), role, Utc::now())?;
             actor.sign(&mut playbook.approval, role)?;
             playbook.save(store)?;
+            if json {
+                return emit_json(
+                    "playbook approve",
+                    serde_json::json!({ "role": role.to_string(), "playbook": playbook }),
+                );
+            }
             println!(
                 "recorded {role} sign-off on the playbook ({})",
                 approval_text(&playbook.approval)
@@ -1382,7 +1614,7 @@ fn playbook(store: &Store, command: PlaybookCommand, actor: &Actor<'_>) -> Resul
     }
 }
 
-fn ats_import(store: &Store, args: &AtsImport) -> Result<()> {
+fn ats_import(store: &Store, args: &AtsImport, json: bool) -> Result<()> {
     let id = RequisitionId::try_from(args.requisition.as_str())?;
     let book = load_requisitions(store)?;
     book.require(&id)?;
@@ -1397,6 +1629,23 @@ fn ats_import(store: &Store, args: &AtsImport) -> Result<()> {
         .filter(|applicant| !applicant.knockouts.is_empty())
         .count();
     roster.save(store)?;
+    if roster.applicants.is_empty() {
+        return Err(Error::invalid(
+            "ATS export",
+            "no row survived the initial-screen filter",
+        ));
+    }
+    if json {
+        return emit_json(
+            "ats import",
+            serde_json::json!({
+                "requisition": id.as_str(),
+                "imported": roster.applicants.len(),
+                "with_knockouts": with_knockouts,
+                "excluded_not_initial_screen": roster.excluded_not_initial_screen,
+            }),
+        );
+    }
     println!(
         "imported {} initial-screen applicants for {id} ({} with KO answers)",
         roster.applicants.len(),
@@ -1408,12 +1657,6 @@ fn ats_import(store: &Store, args: &AtsImport) -> Result<()> {
             roster.excluded_not_initial_screen
         );
     }
-    if roster.applicants.is_empty() {
-        return Err(Error::invalid(
-            "ATS export",
-            "no row survived the initial-screen filter",
-        ));
-    }
     Ok(())
 }
 
@@ -1422,13 +1665,17 @@ fn disposition(
     command: DispositionCommand,
     operator: Option<&str>,
     registry: &ledger::identity::Registry,
+    json: bool,
 ) -> Result<()> {
     match command {
-        DispositionCommand::Record(args) => disposition_record(store, &args, operator, registry),
+        DispositionCommand::Record(args) => {
+            disposition_record(store, &args, operator, registry, json)
+        }
         DispositionCommand::List(args) => {
             let id = RequisitionId::try_from(args.requisition.as_str())?;
             let dispositions = Dispositions::open(store)?;
             let mut found = 0;
+            let mut current = Vec::new();
             for record in dispositions.records() {
                 if record.form.requisition != id {
                     continue;
@@ -1441,14 +1688,23 @@ fn disposition(
                     continue; // superseded rows are shown with `history`
                 }
                 found += 1;
-                println!(
-                    "{}  {}  {:<40} {:<22} by {} / dm {}",
-                    record.id,
-                    record.form.application_id,
-                    record.form.disposition.to_string(),
-                    abbreviate(&record.form.candidate_first_name, 20),
-                    record.form.recruiter,
-                    record.form.decision_maker
+                current.push(record.clone());
+                if !json {
+                    println!(
+                        "{}  {}  {:<40} {:<22} by {} / dm {}",
+                        record.id,
+                        record.form.application_id,
+                        record.form.disposition.to_string(),
+                        abbreviate(&record.form.candidate_first_name, 20),
+                        record.form.recruiter,
+                        record.form.decision_maker
+                    );
+                }
+            }
+            if json {
+                return emit_json(
+                    "disposition list",
+                    serde_json::json!({ "requisition": id.as_str(), "records": current }),
                 );
             }
             if found == 0 {
@@ -1460,6 +1716,15 @@ fn disposition(
             let application = ApplicationId::try_from(args.application.as_str())?;
             let dispositions = Dispositions::open(store)?;
             let history = dispositions.history(&application);
+            if json {
+                return emit_json(
+                    "disposition history",
+                    serde_json::json!({
+                        "application": application.as_str(),
+                        "records": history,
+                    }),
+                );
+            }
             if history.is_empty() {
                 println!("no records for {application}");
                 return Ok(());
@@ -1490,6 +1755,7 @@ fn disposition_record(
     args: &DispositionRecordArgs,
     operator: Option<&str>,
     registry: &ledger::identity::Registry,
+    json: bool,
 ) -> Result<()> {
     let requisition_id = RequisitionId::try_from(args.requisition.as_str())?;
     let book = load_requisitions(store)?;
@@ -1558,6 +1824,12 @@ fn disposition_record(
 
     let mut dispositions = Dispositions::open(store)?;
     let stored = dispositions.record(form)?.clone();
+    if json {
+        return emit_json(
+            "disposition record",
+            serde_json::json!({ "record": stored }),
+        );
+    }
     println!(
         "captured {} for {} at {} (dm {})",
         stored.form.disposition,
@@ -1577,12 +1849,28 @@ fn disposition_record(
     Ok(())
 }
 
-fn operator(store: &Store, command: OperatorCommand, explicit: Option<&str>) -> Result<()> {
+fn operator(
+    store: &Store,
+    command: OperatorCommand,
+    explicit: Option<&str>,
+    json: bool,
+) -> Result<()> {
     let mut registry = ledger::identity::Registry::load(store)?;
     match command {
         OperatorCommand::Register(args) => {
             let role = args.role.parse::<ledger::identity::Role>()?;
             let operator = registry.register(store, args.name.as_str(), role)?;
+            if json {
+                return emit_json(
+                    "operator register",
+                    serde_json::json!({
+                        "operator": operator,
+                        "keyfile": ledger::identity::keyfile_path(store, &operator.name)
+                            .display()
+                            .to_string(),
+                    }),
+                );
+            }
             println!(
                 "registered {} as {} ({})",
                 operator.name,
@@ -1596,6 +1884,12 @@ fn operator(store: &Store, command: OperatorCommand, explicit: Option<&str>) -> 
             Ok(())
         }
         OperatorCommand::List => {
+            if json {
+                return emit_json(
+                    "operator list",
+                    serde_json::json!({ "operators": registry.operators() }),
+                );
+            }
             if registry.is_empty() {
                 println!("no operators registered");
                 return Ok(());
@@ -1612,6 +1906,12 @@ fn operator(store: &Store, command: OperatorCommand, explicit: Option<&str>) -> 
         }
         OperatorCommand::Whoami => {
             let operator = ledger::identity::active(&registry, explicit)?;
+            if json {
+                return emit_json(
+                    "operator whoami",
+                    serde_json::json!({ "operator": operator }),
+                );
+            }
             println!("{} ({})", operator.name, operator.role);
             Ok(())
         }
@@ -1619,9 +1919,18 @@ fn operator(store: &Store, command: OperatorCommand, explicit: Option<&str>) -> 
 }
 
 #[cfg(feature = "ui")]
-fn ui(store: &Store, args: &UiArgs, explicit: Option<&str>) -> Result<()> {
+fn ui(store: &Store, args: &UiArgs, explicit: Option<&str>, json: bool) -> Result<()> {
     let registry = ledger::identity::Registry::load(store)?;
     let operator = ledger::identity::active(&registry, explicit)?;
+    if json {
+        emit_json(
+            "ui",
+            serde_json::json!({
+                "url": format!("http://127.0.0.1:{}", args.port),
+                "operator": operator,
+            }),
+        )?;
+    }
     ledger::ui::run(ledger::ui::Config {
         data: store.root().to_path_buf(),
         operator: operator.name,
@@ -1629,12 +1938,15 @@ fn ui(store: &Store, args: &UiArgs, explicit: Option<&str>) -> Result<()> {
     })
 }
 
-fn verify_signatures(store: &Store, args: &VerifySignaturesArgs) -> Result<()> {
+fn verify_signatures(store: &Store, json: bool) -> Result<()> {
     let report = ledger::verify::verify_workspace(store)?;
     let registry = ledger::identity::Registry::load(store)?;
 
-    if args.json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+    if json {
+        emit_json(
+            "verify-signatures",
+            serde_json::json!({ "report": &report }),
+        )?;
     } else {
         println!("signed records:   {}", report.dispositions_signed);
         println!("unsigned records: {}", report.dispositions_unsigned);
@@ -1683,7 +1995,7 @@ fn verify_signatures(store: &Store, args: &VerifySignaturesArgs) -> Result<()> {
     Ok(())
 }
 
-fn qa(store: &Store, command: QaCommand) -> Result<()> {
+fn qa(store: &Store, command: QaCommand, json: bool) -> Result<()> {
     match command {
         QaCommand::Record(args) => {
             let registry = load_requisitions(store)?;
@@ -1711,6 +2023,17 @@ fn qa(store: &Store, command: QaCommand) -> Result<()> {
                 at: Utc::now(),
                 scope,
             })?;
+            if json {
+                return emit_json(
+                    "qa record",
+                    serde_json::json!({
+                        "recorded": recorded,
+                        "requisition": requisition.as_str(),
+                        "application": application.as_str(),
+                        "scope": scope.code(),
+                    }),
+                );
+            }
             if recorded {
                 println!("recorded {} QA check for {application}", scope.code());
             } else {
@@ -1728,17 +2051,27 @@ fn qa(store: &Store, command: QaCommand) -> Result<()> {
             let requisition = RequisitionId::try_from(args.requisition.as_str())?;
             let log = QaLog::open(store)?;
             let mut found = 0;
+            let mut selected = Vec::new();
             for record in log.records() {
                 if record.requisition != requisition {
                     continue;
                 }
                 found += 1;
-                println!(
-                    "{}  {}  {}  by {}",
-                    record.application_id,
-                    record.scope.code(),
-                    record.at.format(STAMP),
-                    record.qa
+                selected.push(record.clone());
+                if !json {
+                    println!(
+                        "{}  {}  {}  by {}",
+                        record.application_id,
+                        record.scope.code(),
+                        record.at.format(STAMP),
+                        record.qa
+                    );
+                }
+            }
+            if json {
+                return emit_json(
+                    "qa list",
+                    serde_json::json!({ "requisition": requisition.as_str(), "records": selected }),
                 );
             }
             if found == 0 {
@@ -1749,7 +2082,7 @@ fn qa(store: &Store, command: QaCommand) -> Result<()> {
     }
 }
 
-fn dispatch_command(store: &Store, args: &DispatchArgs) -> Result<()> {
+fn dispatch_command(store: &Store, args: &DispatchArgs, json: bool) -> Result<()> {
     let id = RequisitionId::try_from(args.requisition.as_str())?;
     let book = load_requisitions(store)?;
     let requisition = book.require(&id)?;
@@ -1795,28 +2128,29 @@ fn dispatch_command(store: &Store, args: &DispatchArgs) -> Result<()> {
         &mut send_log,
         &mut blocked_log,
     )?;
-    if args.json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "mode": if mode == Mode::Preview { "preview" } else { "execute" },
-                "sent": report.sent_count(),
-                "previews": report.preview_count(),
-                "blocked": report.blocked_count(),
-                "blocked_reasons": report
-                    .blocked
-                    .iter()
-                    .map(|attempt| attempt.reason.to_string())
-                    .collect::<Vec<String>>(),
-            })
-        );
-    } else {
+    let mut eml_payload: Option<serde_json::Value> = None;
+    let mut payload = serde_json::json!({
+        "mode": if mode == Mode::Preview { "preview" } else { "execute" },
+        "status": delivery_status.code(),
+        "sent": report.sent_count(),
+        "previews": report.preview_count(),
+        "blocked": report.blocked_count(),
+        "blocked_reasons": report
+            .blocked
+            .iter()
+            .map(|attempt| attempt.reason.to_string())
+            .collect::<Vec<String>>(),
+    });
+
+    if !json {
         print_dispatch_report(&report, mode);
     }
 
     if let Some(dir) = &args.eml {
         if mode == Mode::Preview {
-            println!("\n(--eml writes drafts; run without --preview to record the batch)");
+            if !json {
+                println!("\n(--eml writes drafts; run without --preview to record the batch)");
+            }
         } else {
             let sender = format!("{}, {}", requisition.sender.name, requisition.sender.title);
             let batch = ledger::eml::write_batch(
@@ -1826,14 +2160,29 @@ fn dispatch_command(store: &Store, args: &DispatchArgs) -> Result<()> {
                 requisition.reply_to.as_str(),
                 &report.sent,
             )?;
-            println!(
-                "\nwrote {} draft(s) to {} (status {})",
-                batch.files.len(),
-                dir.display(),
-                delivery_status
-            );
-            println!("batch digest: {}", batch.batch_digest);
+            if json {
+                eml_payload = Some(serde_json::json!({
+                    "directory": dir.display().to_string(),
+                    "drafts": batch.files.len(),
+                    "batch_digest": batch.batch_digest,
+                }));
+            } else {
+                println!(
+                    "\nwrote {} draft(s) to {} (status {})",
+                    batch.files.len(),
+                    dir.display(),
+                    delivery_status
+                );
+                println!("batch digest: {}", batch.batch_digest);
+            }
         }
+    }
+
+    if json {
+        if let (Some(object), Some(eml)) = (payload.as_object_mut(), eml_payload) {
+            object.insert("eml".to_owned(), eml);
+        }
+        emit_json("dispatch", payload)?;
     }
 
     if mode == Mode::Execute && report.blocked_count() > 0 && !args.allow_blocked {
@@ -1844,7 +2193,12 @@ fn dispatch_command(store: &Store, args: &DispatchArgs) -> Result<()> {
     Ok(())
 }
 
-fn delivery_command(store: &Store, command: DeliveryCommand, actor: &Actor<'_>) -> Result<()> {
+fn delivery_command(
+    store: &Store,
+    command: DeliveryCommand,
+    actor: &Actor<'_>,
+    json: bool,
+) -> Result<()> {
     match command {
         DeliveryCommand::Confirm(args) => {
             let send_id = SendId::try_from(args.send_id.as_str())?;
@@ -1863,8 +2217,11 @@ fn delivery_command(store: &Store, command: DeliveryCommand, actor: &Actor<'_>) 
                 &operator.public_key,
                 Utc::now(),
             )?;
-            if args.json {
-                println!("{}", serde_json::to_string_pretty(&entry)?);
+            if json {
+                emit_json(
+                    "delivery confirm",
+                    serde_json::json!({ "confirmation": entry }),
+                )?;
             } else {
                 println!(
                     "confirmed {} delivered by {} at {}",
@@ -1882,17 +2239,17 @@ fn delivery_command(store: &Store, command: DeliveryCommand, actor: &Actor<'_>) 
             }
             Ok(())
         }
-        DeliveryCommand::List(args) => {
+        DeliveryCommand::List(_) => {
             let deliveries = DeliveryLog::open(store)?;
             let entries = deliveries.entries()?;
-            if args.json {
-                println!(
-                    "{}",
+            if json {
+                emit_json(
+                    "delivery list",
                     serde_json::json!({
                         "entries": entries.len(),
                         "confirmations": entries,
-                    })
-                );
+                    }),
+                )?;
             } else if entries.is_empty() {
                 println!("no delivery confirmations recorded");
             } else {
@@ -1911,10 +2268,10 @@ fn delivery_command(store: &Store, command: DeliveryCommand, actor: &Actor<'_>) 
     }
 }
 
-fn demo_seed(store: &Store, args: &DemoSeedArgs) -> Result<()> {
+fn demo_seed(store: &Store, args: &DemoSeedArgs, json: bool) -> Result<()> {
     let summary = ledger::demo::seed(store, args.force, args.record)?;
-    if args.json {
-        println!("{}", serde_json::to_string_pretty(&summary)?);
+    if json {
+        emit_json("demo seed", serde_json::json!({ "summary": summary }))?;
         return Ok(());
     }
     println!("synthetic fixture — no pilot data yet");
@@ -1994,19 +2351,19 @@ fn print_dispatch_report(report: &DispatchReport, mode: Mode) {
     }
 }
 
-fn log(store: &Store, command: LogCommand) -> Result<()> {
+fn log(store: &Store, command: LogCommand, json: bool) -> Result<()> {
     match command {
-        LogCommand::Verify(args) => {
+        LogCommand::Verify(_) => {
             let verification = SendLog::open(store)?.verification()?;
-            if args.json {
-                println!(
-                    "{}",
+            if json {
+                emit_json(
+                    "log verify",
                     serde_json::json!({
                         "valid": true,
                         "entries": verification.entries,
                         "head": verification.head,
-                    })
-                );
+                    }),
+                )?;
             } else {
                 println!("send log verified: {} entries", verification.entries);
                 println!("head: {}", verification.head);
@@ -2023,8 +2380,8 @@ fn log(store: &Store, command: LogCommand) -> Result<()> {
             let operator = ledger::operator::identity(args.operator.as_deref());
             let report =
                 ledger::operator::quarantine(store, args.reason.as_str(), operator.as_str())?;
-            if args.json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
+            if json {
+                emit_json("log quarantine", serde_json::json!({ "report": report }))?;
             } else {
                 println!(
                     "quarantined {} byte(s) to {}",
@@ -2056,72 +2413,116 @@ fn log(store: &Store, command: LogCommand) -> Result<()> {
                 })
                 .collect();
 
-            let sink: Box<dyn std::io::Write> = match &args.out {
-                Some(path) => {
-                    Box::new(std::fs::File::create(path).map_err(|source| Error::Io {
-                        path: path.clone(),
-                        source,
-                    })?)
-                }
-                None => Box::new(std::io::stdout()),
-            };
-            let mut writer = csv::Writer::from_writer(sink);
-            writer
-                .write_record([
-                    "SEND_ID",
-                    "APPLICATION_ID",
-                    "REQ_ID",
-                    "DISPOSITION",
-                    "GATE_CODE",
-                    "DECISION_MAKER_ID",
-                    "CAPTURE_TIMESTAMP",
-                    "SEND_TIMESTAMP",
-                    "TEMPLATE_ID",
-                    "TEXT_VERSION",
-                    "RENDERED_BODY_HASH",
-                    "RENDERED_BODY_FULL",
-                    "DELIVERY_STATUS",
-                    "REPLY_RECEIVED_FLAG",
-                ])
-                .map_err(Error::from)?;
-            for entry in &entries {
-                let flag = if replied.contains(entry.application_id.as_str()) {
-                    "TRUE"
+            if let Some(path) = &args.out {
+                let file = std::fs::File::create(path).map_err(|source| Error::Io {
+                    path: path.clone(),
+                    source,
+                })?;
+                write_send_csv(file, &entries, &replied)?;
+                if json {
+                    emit_json(
+                        "log export",
+                        serde_json::json!({
+                            "requisition": id.as_str(),
+                            "rows": entries.len(),
+                            "out": path.display().to_string(),
+                        }),
+                    )?;
                 } else {
-                    "FALSE"
-                };
-                writer
-                    .write_record([
-                        entry.send_id.as_str(),
-                        entry.application_id.as_str(),
-                        entry.requisition.as_str(),
-                        entry.disposition.code(),
-                        entry.gate_code.map(GateKind::code).unwrap_or(""),
-                        entry.decision_maker.as_str(),
-                        &entry.captured_at.to_rfc3339(),
-                        &entry.sent_at.to_rfc3339(),
-                        entry.template.letter(),
-                        entry.text_version.as_str(),
-                        entry.text_digest.as_str(),
-                        entry.body.as_str(),
-                        entry.delivery_status.code(),
-                        flag,
-                    ])
-                    .map_err(Error::from)?;
-            }
-            writer.flush().map_err(|source| Error::Io {
-                path: args.out.clone().unwrap_or_default(),
-                source,
-            })?;
-            if args.out.is_some() {
-                println!("exported {} entries", entries.len());
+                    println!("exported {} entries", entries.len());
+                }
+            } else if json {
+                let rows: Vec<serde_json::Value> = entries
+                    .iter()
+                    .map(|entry| {
+                        serde_json::json!({
+                            "send_id": entry.send_id.as_str(),
+                            "application_id": entry.application_id.as_str(),
+                            "requisition": entry.requisition.as_str(),
+                            "disposition": entry.disposition.code(),
+                            "gate_code": entry.gate_code.map(GateKind::code),
+                            "decision_maker": entry.decision_maker.as_str(),
+                            "captured_at": entry.captured_at.to_rfc3339(),
+                            "sent_at": entry.sent_at.to_rfc3339(),
+                            "template": entry.template.letter(),
+                            "text_version": entry.text_version.as_str(),
+                            "text_digest": entry.text_digest.as_str(),
+                            "body": entry.body.as_str(),
+                            "delivery_status": entry.delivery_status.code(),
+                            "reply_received": replied.contains(entry.application_id.as_str()),
+                        })
+                    })
+                    .collect();
+                emit_json(
+                    "log export",
+                    serde_json::json!({ "requisition": id.as_str(), "rows": rows }),
+                )?;
+            } else {
+                write_send_csv(std::io::stdout(), &entries, &replied)?;
             }
             Ok(())
         }
     }
 }
 
-fn reply_record(store: &Store, args: &ReplyRecordArgs) -> Result<()> {
+/// Writes the CSV export, the shape the ATS round-trip expects.
+fn write_send_csv<W: std::io::Write>(
+    sink: W,
+    entries: &[SendEntry],
+    replied: &std::collections::BTreeSet<String>,
+) -> Result<()> {
+    let mut writer = csv::Writer::from_writer(sink);
+    writer
+        .write_record([
+            "SEND_ID",
+            "APPLICATION_ID",
+            "REQ_ID",
+            "DISPOSITION",
+            "GATE_CODE",
+            "DECISION_MAKER_ID",
+            "CAPTURE_TIMESTAMP",
+            "SEND_TIMESTAMP",
+            "TEMPLATE_ID",
+            "TEXT_VERSION",
+            "RENDERED_BODY_HASH",
+            "RENDERED_BODY_FULL",
+            "DELIVERY_STATUS",
+            "REPLY_RECEIVED_FLAG",
+        ])
+        .map_err(Error::from)?;
+    for entry in entries {
+        let flag = if replied.contains(entry.application_id.as_str()) {
+            "TRUE"
+        } else {
+            "FALSE"
+        };
+        writer
+            .write_record([
+                entry.send_id.as_str(),
+                entry.application_id.as_str(),
+                entry.requisition.as_str(),
+                entry.disposition.code(),
+                entry.gate_code.map(GateKind::code).unwrap_or(""),
+                entry.decision_maker.as_str(),
+                &entry.captured_at.to_rfc3339(),
+                &entry.sent_at.to_rfc3339(),
+                entry.template.letter(),
+                entry.text_version.as_str(),
+                entry.text_digest.as_str(),
+                entry.body.as_str(),
+                entry.delivery_status.code(),
+                flag,
+            ])
+            .map_err(Error::from)?;
+    }
+    writer.flush().map_err(|source| Error::Io {
+        path: PathBuf::from("<csv export>"),
+        source,
+    })?;
+    Ok(())
+}
+
+fn reply_record(store: &Store, args: &ReplyRecordArgs, json: bool) -> Result<()> {
     if args.count == 0 {
         return Err(Error::invalid("reply count", "must be at least 1"));
     }
@@ -2145,6 +2546,27 @@ fn reply_record(store: &Store, args: &ReplyRecordArgs) -> Result<()> {
         },
         args.count,
     )?;
+    if json {
+        let escalation = if scenario == Some(Scenario::DiscriminationConcern) {
+            let policy = Policy::load(store)?;
+            Some(serde_json::json!({
+                "owner": policy.escalation_owner,
+                "sla_hours": policy.escalation_sla_hours,
+                "configured": policy.is_configured(),
+            }))
+        } else {
+            None
+        };
+        return emit_json(
+            "reply record",
+            serde_json::json!({
+                "requisition": id.as_str(),
+                "recorded": args.count,
+                "scenario": scenario.map(|scenario| scenario.code()),
+                "escalation": escalation,
+            }),
+        );
+    }
     println!("recorded {} reply/replies for {id}", args.count);
     if scenario == Some(Scenario::DiscriminationConcern) {
         let policy = Policy::load(store)?;
@@ -2163,7 +2585,7 @@ fn reply_record(store: &Store, args: &ReplyRecordArgs) -> Result<()> {
     Ok(())
 }
 
-fn signal_record(store: &Store, args: &SignalRecordArgs) -> Result<()> {
+fn signal_record(store: &Store, args: &SignalRecordArgs, json: bool) -> Result<()> {
     if args.count == 0 {
         return Err(Error::invalid("signal count", "must be at least 1"));
     }
@@ -2178,15 +2600,25 @@ fn signal_record(store: &Store, args: &SignalRecordArgs) -> Result<()> {
         },
         args.count,
     )?;
+    if json {
+        return emit_json(
+            "signal record",
+            serde_json::json!({
+                "requisition": id.as_str(),
+                "value": value.code(),
+                "recorded": args.count,
+            }),
+        );
+    }
     println!("recorded {} x {value} for {id}", args.count);
     Ok(())
 }
 
-fn metrics_command(store: &Store, args: &MetricsArgs) -> Result<()> {
+fn metrics_command(store: &Store, args: &MetricsArgs, json: bool) -> Result<()> {
     let id = RequisitionId::try_from(args.requisition.as_str())?;
     let metrics = compute_metrics(store, &id)?;
-    if args.json {
-        println!("{}", serde_json::to_string_pretty(&metrics)?);
+    if json {
+        emit_json("metrics", serde_json::json!({ "metrics": metrics }))?;
     } else {
         println!("{metrics}");
     }
@@ -2217,20 +2649,24 @@ fn compute_metrics(store: &Store, id: &RequisitionId) -> Result<Metrics> {
     ))
 }
 
-fn review(store: &Store, command: ReviewCommand) -> Result<()> {
+fn review(store: &Store, command: ReviewCommand, json: bool) -> Result<()> {
     match command {
         ReviewCommand::Criteria(args) => {
             let id = RequisitionId::try_from(args.requisition.as_str())?;
             let feasibility = args.status.parse::<CriteriaFeasibility>()?;
-            let mut reviews = Reviews::load(store)?;
-            reviews.assess(CriteriaRecord {
+            let record = CriteriaRecord {
                 requisition: id.clone(),
                 feasibility,
                 actor: args.actor.clone(),
                 at: Utc::now(),
                 note: args.note.clone(),
-            })?;
+            };
+            let mut reviews = Reviews::load(store)?;
+            reviews.assess(record.clone())?;
             reviews.save(store)?;
+            if json {
+                return emit_json("review criteria", serde_json::json!({ "record": record }));
+            }
             println!("recorded criteria feasibility for {id}: {feasibility}");
             Ok(())
         }
@@ -2243,8 +2679,8 @@ fn review(store: &Store, command: ReviewCommand) -> Result<()> {
                 metrics,
                 reviews.feasibility_for(&RequisitionId::try_from(args.requisition.as_str())?),
             );
-            if args.json {
-                println!("{}", serde_json::to_string_pretty(&routing)?);
+            if json {
+                emit_json("review route", serde_json::json!({ "routing": routing }))?;
             } else {
                 println!("{routing}");
             }
@@ -2253,7 +2689,7 @@ fn review(store: &Store, command: ReviewCommand) -> Result<()> {
     }
 }
 
-fn checklist(store: &Store, command: ChecklistCommand) -> Result<()> {
+fn checklist(store: &Store, command: ChecklistCommand, json: bool) -> Result<()> {
     match command {
         ChecklistCommand::Done(args) => {
             let mut checklist = Checklist::load(store)?;
@@ -2266,6 +2702,16 @@ fn checklist(store: &Store, command: ChecklistCommand) -> Result<()> {
                 )?
                 .clone();
             checklist.save(store)?;
+            let (done, total) = checklist.progress();
+            if json {
+                return emit_json(
+                    "checklist done",
+                    serde_json::json!({
+                        "completion": completion,
+                        "progress": { "signed": done, "total": total },
+                    }),
+                );
+            }
             println!(
                 "marked task {} done (signed by {})",
                 completion.task, completion.actor
@@ -2275,6 +2721,33 @@ fn checklist(store: &Store, command: ChecklistCommand) -> Result<()> {
         ChecklistCommand::Show => {
             let checklist = Checklist::load(store)?;
             let (done, total) = checklist.progress();
+            if json {
+                let tasks: Vec<serde_json::Value> = TASKS
+                    .iter()
+                    .map(|task| {
+                        serde_json::json!({
+                            "id": task.id,
+                            "phase": task.phase,
+                            "title": task.title,
+                            "done": checklist.is_done(task.id),
+                            "actor": checklist
+                                .completion(task.id)
+                                .map(|completion| completion.actor.clone()),
+                            "at": checklist
+                                .completion(task.id)
+                                .map(|completion| completion.at.to_rfc3339()),
+                        })
+                    })
+                    .collect();
+                return emit_json(
+                    "checklist show",
+                    serde_json::json!({
+                        "signed": done,
+                        "total": total,
+                        "tasks": tasks,
+                    }),
+                );
+            }
             println!("{done}/{total} tasks signed off\n");
             for task in TASKS {
                 let mark = if checklist.is_done(task.id) { "x" } else { " " };
@@ -2285,7 +2758,7 @@ fn checklist(store: &Store, command: ChecklistCommand) -> Result<()> {
     }
 }
 
-fn purge(store: &Store, args: &PurgeArgs) -> Result<()> {
+fn purge(store: &Store, args: &PurgeArgs, json: bool) -> Result<()> {
     let operator = ledger::operator::identity(args.operator.as_deref());
     let report = if args.dry_run {
         ledger::retention::preview(store, Utc::now())?
@@ -2298,8 +2771,8 @@ fn purge(store: &Store, args: &PurgeArgs) -> Result<()> {
         }
         ledger::retention::purge(store, &operator, Utc::now())?
     };
-    if args.json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+    if json {
+        emit_json("purge", serde_json::json!({ "report": report }))?;
     } else {
         println!("cutoff:               {}", report.cutoff.to_rfc3339());
         println!("dispositions purged:  {}", report.dispositions_purged);
@@ -2318,7 +2791,7 @@ fn purge(store: &Store, args: &PurgeArgs) -> Result<()> {
     Ok(())
 }
 
-fn migrate(store: &Store, args: &MigrateArgs) -> Result<()> {
+fn migrate(store: &Store, args: &MigrateArgs, json: bool) -> Result<()> {
     if !args.yes {
         return Err(Error::invalid(
             "migrate",
@@ -2327,8 +2800,8 @@ fn migrate(store: &Store, args: &MigrateArgs) -> Result<()> {
     }
     let operator = ledger::operator::identity(args.operator.as_deref());
     let report = ledger::migrate::migrate(store, &operator)?;
-    if args.json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+    if json {
+        emit_json("migrate", serde_json::json!({ "report": report }))?;
     } else {
         println!(
             "schema:   found v{}, target v{}",
@@ -2343,11 +2816,11 @@ fn migrate(store: &Store, args: &MigrateArgs) -> Result<()> {
     Ok(())
 }
 
-fn anchor(store: &Store, args: &AnchorArgs) -> Result<()> {
+fn anchor(store: &Store, args: &AnchorArgs, json: bool) -> Result<()> {
     let operator = ledger::operator::identity(args.operator.as_deref());
     let anchor = ledger::anchor::anchor(store, &operator, args.git_commit)?;
-    if args.json {
-        println!("{}", serde_json::to_string_pretty(&anchor)?);
+    if json {
+        emit_json("anchor", serde_json::json!({ "anchor": anchor }))?;
     } else {
         println!("anchored {} entries at {}", anchor.entries, anchor.head);
         println!(
@@ -2359,7 +2832,7 @@ fn anchor(store: &Store, args: &AnchorArgs) -> Result<()> {
     Ok(())
 }
 
-fn find(store: &Store, args: &FindArgs) -> Result<()> {
+fn find(store: &Store, args: &FindArgs, json: bool) -> Result<()> {
     let handle = args.hash.trim();
     let dispositions = Dispositions::open(store)?;
     let mut matches: Vec<serde_json::Value> = Vec::new();
@@ -2379,8 +2852,11 @@ fn find(store: &Store, args: &FindArgs) -> Result<()> {
             }));
         }
     }
-    if args.json {
-        println!("{}", serde_json::to_string_pretty(&matches)?);
+    if json {
+        emit_json(
+            "find",
+            serde_json::json!({ "handle": handle, "matches": matches }),
+        )?;
     } else if matches.is_empty() {
         println!("no record matches {handle}");
     } else {
