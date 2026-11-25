@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard,
@@ -25,6 +25,17 @@ const nav = [
   { to: "/governance", label: "Governance", icon: ShieldCheck },
   { to: "/audit", label: "Audit trail", icon: ScrollText },
 ] as const;
+/**
+ * The first tab stop on every route: off-screen until it has focus, then it jumps to
+ * the page's `main`. The target carries `tabIndex={-1}` so focus actually moves.
+ */
+export function SkipLink() {
+  return (
+    <a href="#main" className="skip-link">
+      Skip to content
+    </a>
+  );
+}
 export function Status({ value }: { value: string }) {
   return (
     <span className={`status ${value}`}>
@@ -36,12 +47,40 @@ export function Status({ value }: { value: string }) {
 export function LedgerLayout({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [open, setOpen] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  // Opening the drawer moves focus into it, so the menu button's promise is kept:
+  // the next Tab walks the navigation, not the page underneath it.
+  useEffect(() => {
+    if (open) closeRef.current?.focus();
+  }, [open]);
   const { candidates } = useLedger();
   const current = nav.find((n) => n.to === path)?.label ?? "Workspace";
   return (
     <div className="app-shell">
+      <SkipLink />
       {open && <div className="drawer-backdrop md:hidden" onClick={() => setOpen(false)} />}
-      <aside className={`sidebar ${open ? "mobile-open" : ""}`}>
+      <aside
+        id="workspace-nav"
+        className={`sidebar ${open ? "mobile-open" : ""}`}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setOpen(false);
+        }}
+        onBlur={(event) => {
+          // The drawer is not modal: the moment focus leaves it, it closes rather
+          // than covering the control the focus landed on.
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+        }}
+      >
+        <Button
+          ref={closeRef}
+          variant="ghost"
+          size="icon"
+          className="nav-close md:hidden"
+          aria-label="Close navigation"
+          onClick={() => setOpen(false)}
+        >
+          <X />
+        </Button>
         <BrandMark />
         <div className="workspace-chip">
           <BriefcaseBusiness size={17} className="text-muted-foreground" />
@@ -96,7 +135,7 @@ export function LedgerLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </aside>
-      <main className="main-shell">
+      <main id="main" tabIndex={-1} className="main-shell">
         <header className="topbar">
           <div className="topbar-path">
             <Button
@@ -104,6 +143,8 @@ export function LedgerLayout({ children }: { children: ReactNode }) {
               size="icon"
               className="md:hidden"
               aria-label="Open navigation"
+              aria-expanded={open}
+              aria-controls="workspace-nav"
               onClick={() => setOpen(true)}
             >
               <Menu />

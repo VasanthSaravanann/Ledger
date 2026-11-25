@@ -4,6 +4,7 @@ import { LockKeyhole } from "lucide-react";
 
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
+import { SkipLink } from "@/components/ledger-layout";
 
 /*
  * The public explainer for the pilot. It carries the workspace's tokens (paper,
@@ -191,6 +192,7 @@ export function LandingPage() {
 
   return (
     <div className="lp">
+      <SkipLink />
       <header className="lp-bar">
         <div className="lp-bar-inner wrap">
           <BrandMark />
@@ -212,7 +214,7 @@ export function LandingPage() {
         </div>
       </header>
 
-      <main className="lp-main wrap">
+      <main id="main" tabIndex={-1} className="lp-main wrap">
         <section className="lp-hero" data-enter>
           <h1>Candidate feedback your hiring team can defend.</h1>
           <p className="lp-deck">

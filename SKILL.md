@@ -42,7 +42,7 @@ hosted tenancy, no Windows binary, no generated static site.
   the default graph. Optional `ui` feature adds axum + tokio.
 - 34 modules, ~15.7k lines, **155 tests** (163 with `--features ui`).
 - 26 top-level CLI commands, `--json` on every one (a single global flag).
-- Web: 6 routes, 6 tests, eslint 0 errors (7 known `react-refresh` warnings).
+- Web: 6 routes, 11 tests, eslint 0 errors (7 known `react-refresh` warnings).
 - Deployed at **https://ledger-pilot-chi.vercel.app** from `web/` on every push to
   `main`; CI runs `test`, `msrv`, `web`, `supply-chain`, `coverage`, plus weekly
   `mutants` and `fuzz`.
@@ -150,7 +150,7 @@ Web:
 
 ```bash
 cd web && bun install --frozen-lockfile
-bun run lint && bun run test   # 0 errors, 6 tests
+bun run lint && bun run test   # 0 errors, 11 tests
 bun run build                  # Nitro preset vercel → .vercel/output
 ```
 

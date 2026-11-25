@@ -708,11 +708,16 @@
   .sidebar {
     width: 224px;
     transform: translateX(-100%);
+    /* Off-canvas is also out of the tab order: a hidden drawer must not take focus.
+     * The switch is immediate, so a closing drawer cannot hold the focus for 220ms. */
+    visibility: hidden;
     transition: transform 220ms;
   }
   .sidebar.mobile-open {
     transform: translateX(0);
+    visibility: visible;
     box-shadow: var(--shadow-float);
+    transition: transform 220ms;
   }
   .topbar {
     padding: 0 16px;
@@ -832,10 +837,8 @@
   text-decoration: none;
 }
 
-/* The workspace ships `focus-visible:outline-none`; this restores a ring of equal strength. */
-.lp :focus-visible,
-.focus\:outline-none:focus-visible,
-.focus-visible\:outline-none:focus-visible {
+/* One ring on both surfaces. */
+.lp :focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 3px;
   border-radius: 4px;
@@ -1517,5 +1520,93 @@
   }
   .lp-actions > * {
     flex: 1 1 auto;
+  }
+}
+
+/*
+ * P2-3: accessibility floor for the preview.
+ *
+ * The skip link is the first tab stop on every route and only becomes visible when
+ * focused, so a keyboard user can leave the navigation without walking it. It sits
+ * after the `<header>` in source order only in the workspace, where the sidebar
+ * precedes the main column: the link still comes first in the DOM.
+ */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 7px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+  transition: transform 120ms ease;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* One visible ring, on both surfaces. Ties with the utility that removes it and
+ * comes later in the sheet, so a focused control never loses its outline. */
+:is(a, button, [role="button"], summary, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  /* The ring appears at once: no transition is allowed to fade it in. */
+  transition-property: none;
+}
+
+/*
+ * At phone widths every link and control outside running text is at least 44px in
+ * both directions. The selectors are deliberately one notch more specific than the
+ * component rules that set 32–40px, so this is the floor, not a suggestion.
+ */
+/* An icon-only link still needs a 44px box: the glyph is 13px. */
+.tap-target {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.nav-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+}
+
+@media (max-width: 480px) {
+  .app-shell a,
+  .app-shell button,
+  .app-shell [role="button"],
+  .app-shell summary,
+  .app-shell select,
+  .app-shell input:not([type="hidden"]),
+  .lp a,
+  .lp button,
+  .lp [role="button"],
+  .lp summary,
+  .lp select,
+  .lp input:not([type="hidden"]),
+  .lp-footer a,
+  .lp-footer nav a,
+  .lp-bar-link {
+    min-height: 44px;
+  }
+  .app-shell button,
+  .app-shell [role="button"],
+  .lp button,
+  .lp [role="button"],
+  .lp-bar .brand {
+    min-width: 44px;
   }
 }

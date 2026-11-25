@@ -173,7 +173,7 @@ export function TriageWorkspace() {
               <Link
                 to="/dispatch"
                 aria-label="View dispatch queue"
-                className="ml-auto text-muted-foreground"
+                className="tap-target ml-auto text-muted-foreground"
               >
                 <ArrowUpRight size={13} />
               </Link>
@@ -192,7 +192,7 @@ export function TriageWorkspace() {
               <Link
                 to="/governance"
                 aria-label="View governance"
-                className="ml-auto text-muted-foreground"
+                className="tap-target ml-auto text-muted-foreground"
               >
                 <ArrowUpRight size={13} />
               </Link>

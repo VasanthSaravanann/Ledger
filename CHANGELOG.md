@@ -29,6 +29,31 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P2-3 Close the accessibility findings on the preview
+
+The checker still reported no skip link and sub-44px controls in the footer at 320. Both
+surfaces now carry a `SkipLink` as the first element in the DOM — a fixed, 44px control
+that is off-screen until focused and targets `<main id="main" tabindex="-1">` on every
+route, including the 404 and error pages. The workspace drawer is a real drawer now: the
+menu button gained `aria-expanded` and `aria-controls`, opening moves focus to a
+close button, Escape closes it, and leaving it closes it rather than letting it cover
+the next control. `visibility: hidden` takes the closed drawer out of the tab order,
+immediately — the 220ms visibility delay let focus land in a drawer that had just closed.
+
+The 40 `outline-none` utilities were removed from the shadcn components, so the
+stylesheet no longer contains a rule that deletes the focus outline; one ring is defined
+in `styles.css` and appears at once (`transition-property: none` while focused). At 480px
+and below every link, button, summary, select and field gets a 44px floor, with
+icon-only links taking a 44px `.tap-target` box. The landing footer links went from 32px
+to 44px on a phone.
+
+Proved by the real checker on all six routes at 390 and 320: `skip-link`, `focus-ring`,
+`focus-visible`, `focus-hidden`, `tap-size` and `menu-toggle` all PASS (`consistency.mjs`,
+the taste gate's browser). `src/test/accessibility.test.tsx` adds five jsdom tests: the
+skip link is the first tab stop on the landing page and in the workspace, it targets
+`main#main`, and the stylesheet still hides-then-shows it, draws a ring, and holds the
+44px floor.
+
 ### P2-2 Generate the audit evidence pack
 
 An auditor would have had to ask six questions. `scripts/evidence-pack.sh` writes
