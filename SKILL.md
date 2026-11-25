@@ -40,7 +40,7 @@ hosted tenancy, no Windows binary, no generated static site.
 
 - Rust 2024, MSRV **1.85** (compiled in CI), 11 direct crates, **no network crates** in
   the default graph. Optional `ui` feature adds axum + tokio.
-- 34 modules, ~15.2k lines, **143 tests** (151 with `--features ui`).
+- 34 modules, ~15.2k lines, **145 tests** (153 with `--features ui`).
 - 26 top-level CLI commands; `--json` on 13 of them.
 - Web: 6 routes, 6 tests, eslint 0 errors (7 known `react-refresh` warnings).
 - Deployed at **https://ledger-pilot-chi.vercel.app** from `web/` on every push to

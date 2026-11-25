@@ -29,6 +29,26 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P0-5 Schedule chain verification with an alarm that fires
+
+Corruption used to be discovered by whoever happened to run a command. `scripts/verify-chain.sh`
+now runs four checks and requires them to agree: `ledger log verify`, `verify_log.py`,
+`ledger verify-signatures` and `ledger delivery list`. It compares the two heads on
+purpose — if the Rust chain and the independent verifier disagree, neither is trusted.
+Exit 1 is the alarm, exit 2 is a tooling problem, and both print a `ALARM …` line.
+
+`.github/workflows/verify.yml` runs it daily at 06:17 UTC against a restored copy of the
+147-entry fixture (CI has no pilot disk, and a scheduled job must not write to one), runs
+the restore drill first, then requires `--fixture-tampered` to fail so a verifier that
+always says OK cannot pass. The failure path is also a test: `tests/monitoring.rs` makes
+the script fail on an edited value, a torn tail and a broken signature.
+
+`docs/monitoring.md` says who is paged (`escalation_owner` in `policy.json`, 24-hour
+SLA), the first fifteen minutes (copy the workspace before touching it, re-run by hand,
+compare the head with `anchors/`, restore or stop), how to read each message, and what
+the alarm cannot cover: the live workspace unless a timer runs there, anchoring, and
+availability.
+
 ### P0-3 Write the key custody and rotation procedure
 
 Identity was an Ed25519 keyfile at `0600` with no documented holder, rotation path, or

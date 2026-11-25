@@ -1,0 +1,45 @@
+name: verify
+
+# The alarm: verify a restored copy of the workspace every day, and fail loudly when
+# anything about it stopped being true. A red run is the page; who receives it is in
+# docs/monitoring.md.
+
+on:
+  schedule:
+    # Daily 06:17 UTC: off the hour, when the shared runners are least busy.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify
+  cancel-in-progress: false
+
+jobs:
+  chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --locked
+
+      # An untested backup is not a backup; this also proves the restore path still
+      # produces a workspace the verifiers accept.
+      - name: Restore drill
+        run: bash scripts/restore-drill.sh
+
+      # A scheduled job has no access to the pilot's disk, so it checks a restored
+      # copy. On the pilot host the same script runs with `--data <workspace>`.
+      - name: Verify the restored fixture
+        run: bash scripts/verify-chain.sh --fixture
+
+      # A monitor that cannot fail is decoration: require the failure path to fire.
+      - name: Prove the alarm fires
+        run: |
+          if bash scripts/verify-chain.sh --fixture-tampered; then
+            echo "::error::a tampered workspace verified; the alarm is not live"
+            exit 1
+          fi
+          echo "the alarm fired as expected"
