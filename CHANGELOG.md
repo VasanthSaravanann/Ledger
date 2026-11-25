@@ -29,6 +29,23 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P1-4 Cut and verify release v0.1.0
+
+`release.yml` existed but no tag had ever been pushed, so there was no downloadable
+artefact with a checksum an auditor could keep. The publish job now requires every
+tarball to contain `verify_log.py`, `FORMAT_SPEC.md`, `THREAT_MODEL.md` and the licence —
+and fails if one is missing — and it composes release notes from the tree instead of
+adjectives: the test count at the tag and the fixture chain head, both computed in CI,
+plus the filename to verify against the `.sha256`. `generate_release_notes` still adds
+GitHub's own summary after them.
+
+Tag `v0.1.0` points at this commit; the three targets (aarch64-apple-darwin,
+x86_64-apple-darwin, x86_64-unknown-linux-gnu) build, package and publish. The README's
+limitation row changed with it: the remaining gap is that the binary is not code-signed,
+not that no release exists. Because the gate (`gh release view v0.1.0`) can only pass
+after the tag's workflow finishes, the plan state lands in a one-line follow-up commit
+rather than the tagged one.
+
 ### P1-2 Write the incident runbook
 
 The first responder would have had to read the repository at 2am. `docs/incident-runbook.md`

@@ -10,9 +10,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
-          - os: macos-13
+          - os: macos-15-intel
             target: x86_64-apple-darwin
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -42,11 +42,50 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      # The tarball is the artefact an auditor keeps; require the verifier and the
+      # normative documents to be inside every one of them, not just in the repo.
+      - name: Every tarball carries the verifier and the specs
+        run: |
+          set -euo pipefail
+          for archive in dist/*.tar.gz; do
+            for required in verify_log.py FORMAT_SPEC.md THREAT_MODEL.md LICENSE; do
+              tar tzf "$archive" | grep -qx "$required" \
+                || { echo "::error::$archive is missing $required"; exit 1; }
+            done
+          done
+
+      # Numbers, not adjectives: the test count and the fixture head at this tag.
+      - name: Compose release notes
+        run: |
+          set -euo pipefail
+          tests=$(cargo test --locked -- --list 2>/dev/null | grep -c ': test$')
+          head=$(sed -n 's/^const LOG_HEAD: &str = "\(.*\)";$/\1/p' tests/golden.rs)
+          {
+            echo "Recorder release. The tarballs carry the binary, \`verify_log.py\`,"
+            echo "\`FORMAT_SPEC.md\`, \`THREAT_MODEL.md\` and the licence."
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Tests at this tag | ${tests} (\`cargo test --locked\`) |"
+            echo "| Fixture chain head | \`${head}\` |"
+            echo
+            echo "Verify a download before trusting it:"
+            echo
+            echo '```'
+            echo "shasum -a 256 -c ledger-<target>.sha256"
+            echo '```'
+          } > notes.md
+          cat notes.md
+
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          body_path: notes.md
           generate_release_notes: true

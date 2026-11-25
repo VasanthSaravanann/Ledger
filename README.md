@@ -321,7 +321,7 @@ Honest list; each one is a decision, not an oversight.
 | Single operator per process | Identity is a name plus a `0600` keyfile, bound at launch; switching means relaunching. |
 | macOS and Linux only | No Windows binary is built or tested, and the README says so. |
 | Retention is coarse | `purge` tombstones dispositions and rosters; send-log PII lives inside the chain, so end-of-retention erasure means deleting the workspace, not editing it. |
-| No published release | `release.yml` builds and checksums tarballs on a tag; no tag has been cut yet. |
+| Releases are source-verified, not signed | `release.yml` builds three targets, checksums every tarball and ships `verify_log.py` with it; the binary itself is not code-signed. |
 | Specification documents are archived | The original `plan.md`/`V2.md`…`website.md` are no longer in the tree; they remain readable at `git show 90dfcb6:V2.md`. |
 
 ## Security and privacy
