@@ -43,7 +43,7 @@ Non-goals, by design (do not "helpfully" add them):
 - No hosted multi-tenant service. The workspace is a directory the team holds.
 - No Windows binary. macOS and Linux only, and that is stated publicly.
 - **No generated site.** No static site generator, no committed HTML: the `web/`
-  Lovable UI preview is the only published surface, and the loopback-only `ledger ui`
+  `web/` preview is the only published surface, and the loopback-only `ledger ui`
   server is the only one the Rust code runs.
 - The pilot's *legal* acts (counsel's privacy opinion, a real monitored mailbox,
   HM/Legal signatures, the real requisition) are human; the tool records them, it
@@ -93,7 +93,7 @@ default graph. Optional `ui` feature adds axum + tokio. 16k lines across 33 modu
 | `FORMAT_SPEC.md`, `THREAT_MODEL.md` | Normative byte format; and what the chain does/does not prove. |
 | `scripts/demo-walkthrough.sh`, `scripts/coverage-floors.sh` | Scripted demo; per-module coverage gate. |
 | `.github/workflows/ci.yml` | test · msrv · supply-chain · coverage · web (+ weekly mutants, nightly fuzz). |
-| `web/` | Lovable UI preview: TanStack Start workspace, session-only sample data, deployed to Vercel. |
+| `web/` | Workspace preview: TanStack Start, session-only sample data, deployed to Vercel. |
 
 ---
 
@@ -205,7 +205,7 @@ The build conversation, compressed. Commit refs are real; use `git show` for det
 | 15 | "review" | 10 findings from modern-web-guidance; all fixed: XSS sink, CSP, table semantics, a11y, motion (`f71d930`). |
 | 16 | "make a skill file" | This document. |
 | 17 | "remove the complete website and static html" | Deleted `site/`, `src/site.rs`, `--export-html`, `vercel.json`, `.vercelignore`, `scripts/build-site.sh` and the CI drift step; dropped `pulldown-cmark`. Rows 3, 4, 14 and 15 describe work that no longer exists in the tree. |
-| 18 | "connect the Lovable project, push to main, new prod" | Moved the Lovable export to `web/` (TanStack Start, UI preview), added `web/vercel.json`, pointed the Vercel project's Root Directory at `web` with `NITRO_PRESET=vercel`, pushed to `main` and deployed production. |
+| 18 | "connect the exported workspace, push to main, new prod" | Moved the exported UI into `web/` (TanStack Start, preview), added `web/vercel.json`, pointed the Vercel project's Root Directory at `web`, built with the Nitro `vercel` preset, pushed to `main` and deployed production. |
 
 Production is the `web/` preview at **https://ledger-pilot-chi.vercel.app** — sample
 data only, not connected to the Rust ledger. The removed artefact pages are gone; do
@@ -438,8 +438,9 @@ NITRO_PRESET=vercel bun run build  # what Vercel runs; writes .vercel/output
 ```
 
 The Vercel project's Root Directory is `web`, so a push to `main` deploys it and no
-`vercel.json` is read from the repo root. Without `NITRO_PRESET=vercel` the Lovable
-config builds a Cloudflare worker instead, which Vercel cannot serve.
+`vercel.json` is read from the repo root. `vite.config.ts` sets Nitro's default preset
+to `vercel`, so `bun run build` writes `.vercel/output` unaided; `NITRO_PRESET` overrides
+it for any other target.
 
 ### CI
 
@@ -478,7 +479,7 @@ in the same commit.
 Done: v1, V2, V3 (fixture only), V4 (all but three items below), V5 phases 1, 2 and 5,
 V5 phase 3 (identities, signing, RBAC, drift, backups), Phase 4 slices A–C and the core
 of D/E. Removed on request: the static artefact site and its generator. Added in its
-place: `web/`, the Lovable TanStack Start preview, live on Vercel.
+place: `web/`, the TanStack Start preview, live on Vercel.
 
 Open, with the obstacle named:
 

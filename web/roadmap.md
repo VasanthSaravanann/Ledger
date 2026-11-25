@@ -1,4 +1,4 @@
-# Ledger workspace
+# Ledger workspace preview
 
 - [x] Build the triage workspace, filters, candidate drawer and bulk actions.
 - [x] Build CSV mapping, draft dispatch, governance and audit views.

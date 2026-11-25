@@ -242,9 +242,9 @@ bun run lint                       # eslint + prettier
 NITRO_PRESET=vercel bun run build  # what Vercel runs
 ```
 
-`NITRO_PRESET=vercel` is required: the Lovable build config defaults to a Cloudflare
-Worker, which Vercel cannot serve. Without it you get `.output/`; with it you get
-`.vercel/output` (Build Output API v3).
+The build runs Nitro with the `vercel` preset by default, so it writes
+`.vercel/output` (Build Output API v3) with no environment variable set. Setting
+`NITRO_PRESET` overrides the target if you build for something else.
 
 ### Deploying it yourself
 
