@@ -29,6 +29,23 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P2-2 Generate the audit evidence pack
+
+An auditor would have had to ask six questions. `scripts/evidence-pack.sh` writes
+`evidence/<date>/` with the chain verification from both implementations, the signature
+report and its exit code, the retention preview, the restore drill's output and timings,
+every off-host anchor receipt, the signed access review when it exists, and the release's
+`.sha256` assets, plus an `index.json` naming each file, its size and its SHA-256. A copy
+of the index lands at `evidence/index.json`, which is the path `PRODUCTION.md` names.
+
+It runs against a fresh fixture by default and against a pilot with `--data … --operator …`.
+It collects no candidate data — no names, addresses, bodies or dispositions — so a pack
+can be handed over without handing over the people it is about. What is missing is
+recorded in the index's `notes` rather than omitted: today that is the anchors (the
+fixture publishes none) and `docs/access-review.md` (P0-4 is still a human act).
+`evidence/` is git-ignored: the pack is produced on demand, not committed.
+`docs/evidence.md` is the ten-minute reading order and what the pack cannot prove.
+
 ### P2-1 Add the three properties as proptest suites
 
 The invariants were covered by examples, and a chain that only survives hand-written
