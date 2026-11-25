@@ -1,148 +1,195 @@
-# Production readiness plan
+# Production readiness — autonomous execution plan
 
-Two different things can go live here, and they need different work:
+This is a loop an agent can run without asking questions until there is nothing left a
+machine may do. The backlog is data, the state is data, and "ready" is a command that
+exits 0 — not a judgement.
 
-- **A. The recorder** — the Rust CLI used for a real pilot with one employer, one
-  requisition, and real rejected candidates. Nothing in it has been run against real
-  people yet, and the pilot checklist is **0/13** signed.
-- **B. The preview site** — `ledger-pilot-chi.vercel.app`. It is public, synthetic and
-  session-only. It is "live" already; making it *production-grade* means deciding
-  whether it stays a demo or becomes a real front end (which would need auth,
-  persistence and the chain wired in — none of which exist).
+- **Backlog (authoritative):** `.plan/tasks.json` — 19 tasks, priorities, dependencies,
+  acceptance text, and one shell gate each.
+- **State (written only by the loop):** `.plan/state.json` — status, attempts, commit.
+- **Runner:** `scripts/plan-next.mjs`, `scripts/plan-done.mjs`, `scripts/plan-status.mjs`.
 
-Current state: the software path is complete for everything except **delivery
-confirmation**; the human and legal acts are entirely undone; the preview is honest but
-has no operational story (no error tracking, no monitoring, no auth by design).
+Nothing here is aspirational: every task names the command that proves it done.
 
 ---
 
-## 1. Readiness at a glance
+## 1. Definition of production ready
 
-| Area | State | Blocks a real pilot? |
-| --- | --- | --- |
-| Dispositions, gate copy, signing, QA, chained log | implemented, 136 tests, golden fixtures | no |
-| Retention, migration, anchoring, backup snapshots | implemented; **never drilled** | **yes** (no restore evidence) |
-| Delivery confirmation (`queued` → `sent`) | **missing** — nothing records arrival | **yes** (the "confirmed sent" KPI cannot be non-zero) |
-| Operator lifecycle (rotation, removal, access review) | registration only | **yes** |
-| Monitoring / alerting on chain verification and purge | **none** | **yes** (a silent corruption is discovered late) |
-| Legal: privacy opinion, retention sign-off, candidate notice | **not started** | **yes** |
-| Mailbox: real monitored address, owner, 24 h SLA cover | **not started** | **yes** |
-| Signatures: named HM and Legal, real requisition facts | **not started** | **yes** |
-| Release: tagged build, checksums, changelog per tag | workflow exists, **no tag cut** | no (but expected by an auditor) |
-| Preview site: auth, persistence, wiring to the CLI | **absent by design** | no, while it stays a demo |
-| Design consistency (landing ↔ workspace) | unified | no |
-| Accessibility of the preview | good, but no skip link; 30 design-gate findings | no |
+Two surfaces, two answers.
 
-## 2. P0 — before a single real candidate is emailed
+**The recorder is production ready when**
 
-These are cheap to do and embarrassing to skip.
+1. all 19 tasks are `done`, except the ones marked `human`/`human-gated`, which are
+   `done` with a named signer and their evidence file present;
+2. `node scripts/plan-next.mjs` prints `STOP=done` (or `STOP=awaiting-human` with only
+   signed-evidence tasks left);
+3. the go/no-go gate in §8 returns **GO** on a rehearsal workspace.
 
-| ID | Item | Acceptance | Effort |
-| --- | --- | --- | --- |
-| P0-1 | **Delivery confirmation** | A chained `DELIVERY_CONFIRMED` event per send, written by a named operator; `delivery_status` moves `queued → sent` only through it; `metrics` can report a non-zero confirmed-sent share; a golden fixture covers both statuses | M |
-| P0-2 | **Backup and restore drill** | `backups/<utc>/` snapshot restored into an empty directory, `log verify` and `verify-signatures` pass on the restored copy, and the procedure is written down with the timings measured | S |
-| P0-3 | **Key custody and rotation** | Documented: who holds the HM and Legal keys, where they live, how a key is rotated without invalidating old signatures, and what a lost key means for `verify-signatures` | S |
-| P0-4 | **Access review** | The operator registry lists exactly the people who should have it, each with a role; a written review date and an owner for repeating it | S |
-| P0-5 | **Chain monitoring** | `ledger log verify` (or `verify-signatures`) on a schedule with an alert on failure, and the anchor from `ledger anchor` kept off-host on a second schedule | M |
-| P0-6 | **Purge rehearsal** | `purge --dry-run` on a copy of the real workspace, reviewed by Legal, showing exactly what tombstones and what stays; the outcome recorded in `policy.json` | S |
-| P0-7 | **Human acts recorded** | Privacy opinion (task 1.1), monitored mailbox with a named owner and SLA cover (1.3), requisition facts for the real role and its gate selection (2.2), HM/Legal signatures (1.2, 2.3, 2.4, 2.5) all signed with real names | M |
+**The preview is production ready when** it stays what it is: reachable, honest about
+being a demo, carrying no personal data, and green on the repo-wide gate. It gains no
+authentication and no persistence until a human decides the product is a hosted service
+— that decision is task `P2-6`'s sibling and explicitly out of scope (§7).
 
-## 3. P1 — before the pilot sends at volume
+The pilot itself is ready only when a person has signed the 13 checklist items. **A
+machine can never finish that**, and the loop must stop rather than pretend.
 
-| ID | Item | Acceptance | Effort |
-| --- | --- | --- | --- |
-| P1-1 | **`--json` on every read command** | 25/25 commands emit JSON (currently 11); `status`, `governance`, `gate`, `requisition`, `templates`, `playbook`, `ats`, `disposition`, `qa`, `reply`, `signal`, `checklist`, `operator`, `find` included; one schema test per command | M |
-| P1-2 | **Incident runbook** | One page: torn tail, failed verification, lost key, wrong disposition, hostile reply, data-subject request. Each with the first three commands to run and who is called | S |
-| P1-3 | **On-call for the 24 h SLA** | The escalation owner named in `policy.json` is reachable, backed up, and the playbook's escalation script has been tested with a real reply | S |
-| P1-4 | **Release tag** | `v0.1.0` tagged; `release.yml` produces tarballs + SHA-256 for macOS arm64/x86_64 and Linux; the verifier, `FORMAT_SPEC.md` and `THREAT_MODEL.md` ship inside | S |
-| P1-5 | **Data-subject path** | A written answer to "candidate asks what you hold": what `find --hash`, `purge` and the send log can and cannot do (send-log PII is inside the chain) | S |
-| P1-6 | **Schema-version the state documents** | `schema_version` on every JSON state file, not just the send log; `migrate` handles each older version; a test per version | M |
+## 2. The loop
 
-## 4. P2 — during and after the pilot
-
-| ID | Item | Acceptance | Effort |
-| --- | --- | --- | --- |
-| P2-1 | **Property tests** | The three properties (no send without disposition, chain stays linked, supersede never rewrites) as `proptest` suites, running in CI | M |
-| P2-2 | **Restore and retention evidence pack** | One directory an auditor can read in ten minutes: anchor receipts, purge reports, access reviews, restore logs | S |
-| P2-3 | **Accessibility pass on the preview** | Skip link first in tab order, focus never under the header, 44 px targets at 390, contrast ≥ 4.5:1 on every label; `consistency.mjs` `focus-ring`, `skip-link`, `tap-size` all pass | S |
-| P2-4 | **Branch protection and signed commits** | `main` protected: required checks (`test`, `msrv`, `web`, `supply-chain`, `coverage`), no force-push, commit signing for maintainers | S |
-| P2-5 | **Dependency automation** | Scheduled `cargo update` PR plus a `bun` update PR, both gated by the existing CI; `cargo-deny` unchanged | S |
-| P2-6 | **Design-gate decision** | Either accept the 30 open tasteskill findings in writing (they are the hanging-margin design and the missing kit grid) or port the landing to the kit's `.wrap` structure. Decide once, record it, stop re-litigating | M |
-
-## 5. P3 — deliberately deferred
-
-| ID | Item | Why it can wait |
-| --- | --- | --- |
-| P3-1 | Preview authentication and persistence | It is a demo. Adding auth without persistence and a real operator model would be security theatre. |
-| P3-2 | Wiring the preview to the CLI | Needs a decision about whether the product is a local desktop tool or a hosted service, which is a product question, not a task. |
-| P3-3 | 1200×630 share card (`og:image`) | Link previews are nice; a cropped screenshot would be worse than none. |
-| P3-4 | Typestate for approved requisitions | Runtime checks and tests already hold the invariant; the refactor buys nothing for an auditor. |
-| P3-5 | Windows support | No binary is claimed and none is tested; adding it means a CI matrix and CSV/CRLF work. |
-| P3-6 | WebAssembly demo | The core pulls `store`/`std::fs`; it would need a `ledger-core` split first. |
-
-## 6. Sequence
-
-| Week | Milestone | Exit criteria |
-| --- | --- | --- |
-| 1 | **Legal and mailbox unblocked** | P0-7 signed: opinion, mailbox owner + SLA cover, reasons recorded, gate selection agreed |
-| 2 | **Restore and destroy rehearsed** | P0-2 and P0-6 done on a copy; timings and outputs filed |
-| 3 | **Delivery confirmation shipped** | P0-1 merged, golden fixture updated, `metrics` shows confirmed sends |
-| 4 | **Operational cover** | P0-3, P0-4, P0-5, P1-2, P1-3 done; alerting tested by breaking a copy on purpose |
-| 5 | **Release and interoperability** | P1-4 tagged and downloadable, P1-1 and P1-6 merged, `--json` documented |
-| 6 | **Go/no-go** | The gate below passes; the pilot either starts or records why not |
-
-## 7. Go/no-go gate
-
-Run this on the day, in this order, and record the output. **Do not send anything if any
-line fails.**
+Run from the repository root. Each iteration is one task, one commit, one push.
 
 ```bash
-# 1. The workspace is intact.
+# 0. Never start dirty. A dirty tree means the last iteration died mid-way.
+git status --short && git pull --ff-only
+
+# 1. Ask what to do. Prints TASK=<id> … GATE=<command>, or STOP=<reason>.
+node scripts/plan-next.mjs
+
+# 2. Do exactly that task. Planned files only; scope creep is a failed task.
+#    The acceptance line in the task is the contract, not a suggestion.
+
+# 3. Prove it. The task's own gate first.
+bash -c "$(node scripts/plan-next.mjs | sed -n 's/^GATE=//p')"
+
+# 4. Prove the repo still works (see §4). Never skip because "it is only docs".
+
+# 5. Close it. This runs the gate again and refuses to lie.
+node scripts/plan-done.mjs <id>              # auto tasks
+node scripts/plan-done.mjs <id> --signed-by "M. Okafor"   # only a person runs this
+
+# 6. Record and ship. One commit per task, subject prefixed with the id.
+git add -A && git commit -m "P0-1 Record delivery confirmation as a chained event" \
+  && git push origin main
+
+# 7. Verify the push: CI green, and for web tasks the deployment READY.
+
+# 8. Back to step 1.
+```
+
+If the gate fails: one repair attempt, then
+
+```bash
+node scripts/plan-done.mjs <id> --fail "what the gate said"
+```
+
+Two failed attempts mark the task `blocked` automatically, and step 1 moves on to the
+next ready task. Three blocked tasks in a row is `STOP=blocked`; write the report (§9)
+and end the run.
+
+## 3. Guard rails the loop may not break
+
+1. **No `--force`, no skipping a gate.** A task is done because its command exited 0.
+2. **No signing for a person.** `plan-done.mjs` refuses `human`/`human-gated` without
+   `--signed-by`, and the signer's evidence file must exist. Writing "APPROVED" into an
+   evidence file to close a task is fabrication, not completion — it is the one failure
+   that would make the whole pilot worthless.
+3. **No weakening the checks.** `deny.toml`, `clippy.toml`, the coverage floors, the MSRV
+   job and the golden fixtures are the product. A task that fails them is not done; it is
+   blocked.
+4. **No format change without a `digest_version` bump.** If a task touches the covered
+   bytes, update `FORMAT_SPEC.md`, regenerate the goldens, and re-run `verify_log.py` in
+   the same commit.
+5. **No second product.** No generated site, no committed HTML, no second design system,
+   no auth on the preview, no ATS integration, no model in the send path (§7).
+6. **A red push is reverted, not patched forward.** `git revert` the task commit, mark it
+   `--fail "reverted: <reason>"`, and continue.
+
+## 4. Repo-wide gate (step 4, every task)
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features --offline -- -D warnings
+cargo test --locked --offline
+cd web && bun install --frozen-lockfile && bun run lint && bun run test && bun run build
+```
+
+For a web task also: `curl -s -o /dev/null -w '%{http_code}' <preview URL>` after the
+deployment is `READY`. For a task touching the chain: `./verify_log.py` and
+`./target/release/ledger log verify` must agree on the same head.
+
+## 5. Task classes
+
+| Class | Who can close it | State it may reach alone |
+| --- | --- | --- |
+| `auto` (13) | the loop | `done` on a green gate |
+| `human-gated` (3) | a person, `--signed-by` | `todo` → the agent produces the artefact, then it waits |
+| `human` (3) | a person, `--signed-by` | the agent may draft support material; never `done` |
+
+`node scripts/plan-status.mjs` shows the split and what each waiting task is blocked on.
+
+## 6. Ordering
+
+Priority, then id, then dependencies — the runner does this for you.
+
+| Phase | Tasks | Intent |
+| --- | --- | --- |
+| P0 (7) | delivery confirmation, restore drill, key custody, access review, chain monitoring, purge rehearsal, the seven human acts | nothing real may be sent until these hold |
+| P1 (6) | `--json` everywhere, incident runbook, SLA cover, release tag, DSAR drill, state versioning | a pilot at volume, not a rehearsal |
+| P2 (6) | proptest, evidence pack, a11y, branch protection, dependency automation, design-gate decision | hardening and the long tail |
+
+`P2-3` (accessibility) and `P2-4` are deliberately dependency-free so the loop always has
+something to do while waiting on a human.
+
+## 7. Out of scope — the loop must stop, not invent
+
+- Wiring the preview to the CLI, or giving it auth/persistence/database.
+- Windows support, WebAssembly, typestate refactors, `og:image` cards.
+- Anything requiring a real candidate, a real mailbox, a lawyer or a signature.
+- Anything that changes what the product claims: if a task would require softening an
+  invariant, the task is wrong, not the invariant.
+
+## 8. Go/no-go gate (run by a human, at the end, on a rehearsal workspace)
+
+```bash
 ledger --operator "<name>" log verify --data <pilot>
-verify_log.py <pilot>/send_log.jsonl
-
-# 2. Every disposition is signed by a registered operator.
+./verify_log.py <pilot>/send_log.jsonl
 ledger --operator "<name>" verify-signatures --data <pilot>
-
-# 3. The copy that will be sent is the copy that was signed (no drift).
-ledger --operator "<name>" governance show --data <pilot>   # artefact verdicts
-ledger --operator "<name>" status --data <pilot>            # checklist 13/13
-
-# 4. The roster is the real one, filtered.
-ledger --operator "<name>" ats import --data <pilot> --requisition <REQ> --file <export.csv>
-
-# 5. Dry run: what would send, and what is blocked and why.
+ledger --operator "<name>" governance show --data <pilot>
+ledger --operator "<name>" status --data <pilot>        # must print 13/13
 ledger --operator "<name>" dispatch --preview --data <pilot> --requisition <REQ>
 ```
 
-- [ ] 13/13 checklist tasks signed, each by a named person
-- [ ] `log verify` and `verify_log.py` agree on the same head
-- [ ] zero `Invalid` signatures; any `Stale` is re-approved
-- [ ] every blocked row has a named reason a person accepts
-- [ ] a restore from the newest backup verified on a second machine
-- [ ] the escalation phone answered a test message inside the SLA
+GO requires: 13/13 signed by named people; both verifiers agree on the same head; zero
+`Invalid` signatures and no unreconciled `Stale`; every blocked row has a reason a person
+accepts; a restore from the newest backup verified on a second machine; the escalation
+phone answered a test message inside the SLA. Anything else is NO-GO with the failing
+line quoted.
 
-## 8. Risks
+## 9. Reporting
 
-| Risk | Likelihood | Impact | Mitigation |
-| --- | --- | --- | --- |
-| A gate answer contradicts the ATS export for a real candidate | medium | block + manual review | the third breaker already blocks; name a reviewer for the day |
-| An operator loses a key | medium | signatures unusable for new records | P0-3: rotation procedure and a second holder |
-| Chain corruption goes unnoticed | low | evidence challenged | P0-5: scheduled verify + off-host anchors |
-| Retention purge surprises Legal | medium | compliance finding | P0-6: dry-run on a copy, signed off before the pilot |
-| Someone treats the preview as the product | medium | reputational | every screen says "preview"; README and this plan repeat it |
-| Scope creep into a hosted product | high | pilot never runs | P3-1/P3-2 are out until the pilot produces evidence |
+Every iteration appends one line to `.plan/state.json` (`state.log`), and the run ends
+with a report in this shape:
 
-## 9. Definition of done
+```text
+PLAN: 9/19 done, 1 blocked, 3 awaiting human
+SHIPPED: P0-1, P0-2, P0-3, P0-5, P1-4, P1-5, P2-3 (commits …)
+BLOCKED: P1-6 after 2 attempts — <gate output, one line>
+HUMAN: P0-4 (access review) · P0-6 (purge) · P0-7 (13 checklist items) · P1-3 (SLA) · P2-4 (branch protection) · P2-6 (design decision)
+NEXT RUN: P1-1 (ready), P1-2 (needs P0-5), …
+```
 
-**Recorder:** P0-1…P0-7 and P1-1, P1-2, P1-4, P1-6 complete; `cargo test --locked`
-green; a real requisition imported, dispersed and dispatched end to end in a rehearsal
-with a person playing the candidate; the audit pack from P2-2 assembled.
+`node scripts/plan-status.mjs` produces the table; the report is written by the agent
+that ran the loop.
 
-**Preview:** stays a demo unless P3-1/P3-2 are approved. Done means it is honest (all
-claims labelled), reachable, and carries no personal data: no analytics, no cookies, no
-storage.
+## 10. When the loop stops on its own
 
-**Docs:** `README.md` runs as written on a clean machine (it does today); `CHANGELOG.md`
-has an entry per shipped change; this file is updated when an item closes, with the
-commit that closed it.
+`STOP=awaiting-human` is a **successful** end state for a machine: the remaining work is
+signatures, a lawyer, a mailbox and a decision. `STOP=done` means every machine task is
+finished. `STOP=blocked` means somebody has to read §9 and unblock a gate.
+
+In all three cases: update this file's status line, commit, and tell the human exactly
+what to sign next.
+
+```text
+STATUS 2026-11-25: 0/19 done · 0 blocked · 3 human · 0 awaiting evidence
+```
+
+## 11. Risks the loop cannot remove
+
+| Risk | Mitigation (already in the plan) |
+| --- | --- |
+| A gate answer contradicts the ATS export for a real candidate | breaker 3 blocks; a named reviewer handles it (`P0-7`) |
+| A lost operator key | `P0-3` rotation and loss procedure |
+| Chain corruption goes unnoticed | `P0-5` scheduled verification + off-host anchors |
+| Retention purge surprises Legal | `P0-6` rehearsal and signature |
+| The preview is mistaken for the product | every screen labels it; `P2-6` decides its future |
+| Scope creep into a hosted service | §7, and the loop is forbidden from starting it |

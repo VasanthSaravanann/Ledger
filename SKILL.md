@@ -184,13 +184,31 @@ Deploy is a push to `main`: Vercel builds `web/` (Root Directory `web`, install
   verified. Push to `main` deploys production, so run `cargo test` and `bun run build`
   first.
 
-## 10. Where everything is written down
+## 10. The production loop
+
+`PRODUCTION.md` is executable: a 19-task backlog in `.plan/tasks.json`, one shell gate
+per task, state in `.plan/state.json` written only by `scripts/plan-done.mjs`.
+
+```bash
+node scripts/plan-next.mjs      # TASK=<id> and its GATE, or STOP=<reason>
+node scripts/plan-done.mjs <id> # runs the gate; refuses to mark a failed task done
+node scripts/plan-status.mjs    # dashboard, dependencies included
+```
+
+Rules: one task, one commit (`<id>:` prefix), push, verify CI. A task of class `human`
+or `human-gated` cannot be closed without `--signed-by "<person>"` and its evidence
+file — never write evidence on someone's behalf. Two failed attempts block a task; three
+blocked in a row ends the run. `STOP=awaiting-human` is the correct machine end state:
+what remains is signatures, a mailbox and a lawyer.
+
+## 11. Where everything is written down
 
 | Question | File |
 | --- | --- |
 | What is it, how do I run it? | `README.md` |
 | What happened, in order? | `CHANGELOG.md` |
-| What is missing before a real pilot? | `PRODUCTION.md` |
+| What is missing before a real pilot? | `PRODUCTION.md` + `.plan/tasks.json` |
+| What should I do next, automatically? | `node scripts/plan-next.mjs` |
 | What do the bytes mean? | `FORMAT_SPEC.md` |
 | What does the chain *not* prove? | `THREAT_MODEL.md` |
 | How do I change it safely? | `CONTRIBUTING.md` |

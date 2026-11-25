@@ -23,6 +23,8 @@ jobs:
       - run: cargo test --locked
       - name: UI feature builds and tests
         run: cargo test --locked --features ui
+      - name: Production plan is well formed
+        run: node scripts/plan-status.mjs --json > /dev/null
 
   msrv:
     runs-on: ubuntu-latest

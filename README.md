@@ -360,8 +360,9 @@ scope reply triage; criteria not agreed → validate criteria first.
   tests that enforce them, failure modes that actually bit.
 - [`CHANGELOG.md`](CHANGELOG.md) — the complete log: every commit, what it changed and
   the reasoning that is not in the diff.
-- [`PRODUCTION.md`](PRODUCTION.md) — what is missing before a real pilot, prioritised,
-  with acceptance criteria and a six-week sequence.
+- [`PRODUCTION.md`](PRODUCTION.md) — the production-readiness loop: a 19-task backlog in
+  `.plan/tasks.json`, each with a shell gate, and a runner an agent can execute until
+  only signatures remain (`node scripts/plan-next.mjs`).
 - [`FORMAT_SPEC.md`](FORMAT_SPEC.md) — the normative byte format.
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) — what the chain does and does not prove.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to change it without breaking the format.
