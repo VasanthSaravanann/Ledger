@@ -29,6 +29,22 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P0-2 Prove backup and restore on a fresh directory
+
+`backups/` existed and dispatch snapshotted into it, but no restore had ever been
+executed. `scripts/restore-drill.sh` now seeds the fixture, copies the whole workspace
+(including `operators/`), restores it into an empty directory, and asserts four things
+agree: `ledger log verify`, `ledger verify-signatures`, the recomputed fixture
+fingerprint, and the independent verifier's head. It then edits one covered value in a
+copy and requires `log verify` to fail, so a verifier that always says OK cannot pass.
+It prints per-step milliseconds: seed 3658 ms, backup 40 ms, restore 38 ms, verify all
+452 ms, tamper check 84 ms on the author's machine.
+
+`docs/restore-drill.md` states what the drill proves and what it cannot: off-host
+copies, recency, key custody, retention, and the anchor receipts remain human
+obligations. The fingerprint is computed on both sides rather than read from
+`demo-summary.json`, because the CLI appends an operator note after seeding.
+
 ### P0-1 Record delivery confirmation as a chained event
 
 The send log recorded `queued` and then nothing ever moved a draft to `sent`: the
