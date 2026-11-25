@@ -38,6 +38,11 @@ tokio = { version = "1", optional = true, features = [
 default = []
 ui = ["dep:axum", "dep:tokio"]
 
+[dev-dependencies]
+# Pinned by the lock file; 1.9.0 is the newest line whose rust-version (1.82) is
+# below this crate's MSRV. The MSRV job compiles `--all-targets`, so it must.
+proptest = "1.9"
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_debug_implementations = "warn"

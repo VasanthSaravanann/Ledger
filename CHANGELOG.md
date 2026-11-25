@@ -29,6 +29,24 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P2-1 Add the three properties as proptest suites
+
+The invariants were covered by examples, and a chain that only survives hand-written
+cases is not evidence. `tests/proptest_chain.rs` adds three generated-input suites, 24
+cases each: **no send without a disposition** (any application id, any candidate, an
+empty disposition log → one `MissingDisposition`, zero entries in the send log);
+**the chain stays linked under arbitrary appends** (0–5 rendered subjects and bodies,
+reopened from disk, every `prev_hash` points at its predecessor and every `entry_hash`
+re-hashes from `canonical_payload`); **supersede never rewrites history** (a correction
+leaves the earlier line byte-for-byte intact and appends exactly one record, which still
+names the record it supersedes).
+
+The cases are few on purpose: each one fsyncs a workspace, so the file costs about four
+seconds, well inside the one-minute budget. `proptest = "1.9"` is a dev-dependency; the
+lock resolved 1.11.0, whose declared `rust-version` is exactly this crate's 1.85, so the
+MSRV job still compiles `--all-targets`. The dependency is dev-only: `cargo build` and
+the release tarball are unchanged.
+
 ### P1-6 Version every state document, not just the send log
 
 A workspace from an older build was indistinguishable from a corrupt one. Every state
