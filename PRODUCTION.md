@@ -90,7 +90,10 @@ and end the run.
    the same commit.
 5. **No second product.** No generated site, no committed HTML, no second design system,
    no auth on the preview, no ATS integration, no model in the send path (§7).
-6. **A red push is reverted, not patched forward.** `git revert` the task commit, mark it
+6. **The plan must be able to drain.** `plan-next.mjs` exits 2 on a dependency that does
+   not exist, a cycle, or an `auto` task waiting on a non-`auto` one — the loop refuses to
+   idle on a person without saying so.
+7. **A red push is reverted, not patched forward.** `git revert` the task commit, mark it
    `--fail "reverted: <reason>"`, and continue.
 
 ## 4. Repo-wide gate (step 4, every task)

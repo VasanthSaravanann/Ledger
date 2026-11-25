@@ -17,7 +17,13 @@
       "why": "Nothing moves a draft from queued to sent, so the \"confirmed sent\" metric can never be non-zero and the log cannot prove anything arrived.",
       "accept": "A new chained entry type DELIVERY_CONFIRMED records who confirmed, when, and the send_id it refers to; DispatchLog status changes only through it; metrics reports confirmed vs queued; a golden fixture covers both statuses; no existing chain head changes for logs that never confirm.",
       "gate": "cargo test --locked delivery && cargo test --locked golden",
-      "files": ["src/log.rs", "src/main.rs", "src/metrics.rs", "tests/golden.rs", "FORMAT_SPEC.md"]
+      "files": [
+        "src/log.rs",
+        "src/main.rs",
+        "src/metrics.rs",
+        "tests/golden.rs",
+        "FORMAT_SPEC.md"
+      ]
     },
     {
       "id": "P0-2",
@@ -29,7 +35,10 @@
       "why": "backups/ exists and dispatch snapshots into it, but no restore has ever been executed; an untested backup is not a backup.",
       "accept": "scripts/restore-drill.sh seeds the fixture, takes a backup, restores into an empty directory, and asserts log verify, verify-signatures and the fixture fingerprint all match; it prints the timings it measured.",
       "gate": "bash scripts/restore-drill.sh",
-      "files": ["scripts/restore-drill.sh", "docs/restore-drill.md"]
+      "files": [
+        "scripts/restore-drill.sh",
+        "docs/restore-drill.md"
+      ]
     },
     {
       "id": "P0-3",
@@ -41,7 +50,9 @@
       "why": "Identity is an Ed25519 keyfile at 0600 with no documented holder, rotation path, or meaning of a lost key.",
       "accept": "docs/key-custody.md names who holds which key, where it lives, how to rotate without invalidating old signatures, what verify-signatures reports after rotation, and what a lost key costs.",
       "gate": "test -s docs/key-custody.md && grep -q '^## Holders' docs/key-custody.md && grep -q '^## Rotation' docs/key-custody.md && grep -q '^## Loss' docs/key-custody.md && grep -q 'verify-signatures' docs/key-custody.md",
-      "files": ["docs/key-custody.md"]
+      "files": [
+        "docs/key-custody.md"
+      ]
     },
     {
       "id": "P0-4",
@@ -49,12 +60,16 @@
       "class": "human-gated",
       "priority": 0,
       "size": "S",
-      "depends_on": ["P0-3"],
+      "depends_on": [
+        "P0-3"
+      ],
       "why": "An auditor asks who could sign what, on which date. The registry answers the first half; only an owner can attest the second.",
       "accept": "docs/access-review.md is generated from `ledger operator list` plus the registry file, lists every operator, role and key fingerprint, has a review date and a signature block, and is signed off by the registry owner.",
       "gate": "test -s docs/access-review.md && grep -q '^Signed off' docs/access-review.md",
       "evidence": "docs/access-review.md",
-      "files": ["docs/access-review.md"]
+      "files": [
+        "docs/access-review.md"
+      ]
     },
     {
       "id": "P0-5",
@@ -62,11 +77,17 @@
       "class": "auto",
       "priority": 1,
       "size": "M",
-      "depends_on": ["P0-2"],
+      "depends_on": [
+        "P0-2"
+      ],
       "why": "Corruption is currently discovered when someone happens to run the command. A pilot needs it discovered by a schedule.",
       "accept": "scripts/verify-chain.sh verifies a workspace and exits non-zero on any tamper, tear or signature failure; a workflow runs it daily against a restored copy; docs/monitoring.md says who is paged and what they run first; the script's failure path is exercised by a test.",
       "gate": "bash scripts/verify-chain.sh --fixture && ! bash scripts/verify-chain.sh --fixture-tampered",
-      "files": ["scripts/verify-chain.sh", ".github/workflows/verify.yml", "docs/monitoring.md"]
+      "files": [
+        "scripts/verify-chain.sh",
+        ".github/workflows/verify.yml",
+        "docs/monitoring.md"
+      ]
     },
     {
       "id": "P0-6",
@@ -74,12 +95,16 @@
       "class": "human-gated",
       "priority": 1,
       "size": "S",
-      "depends_on": ["P0-2"],
+      "depends_on": [
+        "P0-2"
+      ],
       "why": "purge tombstones dispositions and rosters but keeps the send log, and Legal has not seen that distinction on real-shaped data.",
       "accept": "evidence/purge-rehearsal.txt holds the dry-run output on a copy of the fixture, the exact list of what is tombstoned and what is retained, and an APPROVED line signed by Legal with a date.",
       "gate": "test -s evidence/purge-rehearsal.txt && grep -q '^APPROVED' evidence/purge-rehearsal.txt",
       "evidence": "evidence/purge-rehearsal.txt",
-      "files": ["evidence/purge-rehearsal.txt"]
+      "files": [
+        "evidence/purge-rehearsal.txt"
+      ]
     },
     {
       "id": "P0-7",
@@ -92,7 +117,9 @@
       "accept": "ledger status reports 13/13 signed, each by a named person: privacy opinion, approval workflow, monitored mailbox, disposition form, gate copy, comparative paragraph, templates, playbook, ATS export mapping, send log, gate-blocking protocol, pilot execution, metrics, go/no-go.",
       "gate": "test -s evidence/checklist-signed.json",
       "evidence": "evidence/checklist-signed.json",
-      "files": ["evidence/checklist-signed.json"]
+      "files": [
+        "evidence/checklist-signed.json"
+      ]
     },
     {
       "id": "P1-1",
@@ -100,11 +127,17 @@
       "class": "auto",
       "priority": 2,
       "size": "M",
-      "depends_on": ["P0-1"],
+      "depends_on": [
+        "P0-1"
+      ],
       "why": "11 of 25 commands print prose, so no runbook, dashboard or monitoring script can consume them.",
       "accept": "Every top-level command accepts --json and emits one object on stdout with no prose; a contract test enumerates the clap commands and fails if any lacks the flag; README documents the shape of each.",
       "gate": "cargo test --locked json_contract",
-      "files": ["src/main.rs", "tests/cli_json.rs", "README.md"]
+      "files": [
+        "src/main.rs",
+        "tests/cli_json.rs",
+        "README.md"
+      ]
     },
     {
       "id": "P1-2",
@@ -112,11 +145,15 @@
       "class": "auto",
       "priority": 2,
       "size": "S",
-      "depends_on": ["P0-5"],
+      "depends_on": [
+        "P0-5"
+      ],
       "why": "Today the first responder would have to read this repository at 2am.",
       "accept": "docs/incident-runbook.md covers torn tail, failed verification, lost key, wrong disposition, hostile reply and a data-subject request, each with the first three commands, the decision owner and the evidence to keep.",
       "gate": "for s in 'torn tail' 'verification' 'lost key' 'wrong disposition' 'hostile reply' 'data-subject'; do grep -qi \"$s\" docs/incident-runbook.md || exit 1; done",
-      "files": ["docs/incident-runbook.md"]
+      "files": [
+        "docs/incident-runbook.md"
+      ]
     },
     {
       "id": "P1-3",
@@ -124,12 +161,16 @@
       "class": "human",
       "priority": 2,
       "size": "S",
-      "depends_on": ["P0-7"],
+      "depends_on": [
+        "P0-7"
+      ],
       "why": "policy.json names an owner and 24 hours; nobody has answered a test message.",
       "accept": "evidence/oncall-test.txt records a test reply sent to the monitored mailbox, the time to first response, the named backup, and the dates each person is covering.",
       "gate": "test -s evidence/oncall-test.txt",
       "evidence": "evidence/oncall-test.txt",
-      "files": ["evidence/oncall-test.txt"]
+      "files": [
+        "evidence/oncall-test.txt"
+      ]
     },
     {
       "id": "P1-4",
@@ -137,11 +178,16 @@
       "class": "auto",
       "priority": 2,
       "size": "S",
-      "depends_on": ["P0-2"],
+      "depends_on": [
+        "P0-2"
+      ],
       "why": "release.yml exists but no tag has been pushed, so there is no downloadable artefact with checksums an auditor can keep.",
       "accept": "Tag v0.1.0 builds three targets, uploads tarballs with SHA-256, ships verify_log.py, FORMAT_SPEC.md and THREAT_MODEL.md inside, and the release notes name the test count and the fixture head.",
       "gate": "gh release view v0.1.0 --json tagName,assets --jq '.assets | length > 0'",
-      "files": [".github/workflows/release.yml", "CHANGELOG.md"]
+      "files": [
+        ".github/workflows/release.yml",
+        "CHANGELOG.md"
+      ]
     },
     {
       "id": "P1-5",
@@ -149,11 +195,16 @@
       "class": "auto",
       "priority": 2,
       "size": "S",
-      "depends_on": ["P0-2"],
+      "depends_on": [
+        "P0-2"
+      ],
       "why": "\"What do you hold about me?\" has a different answer for unchained state than for the send log, and nobody has walked it.",
       "accept": "scripts/dsar-drill.sh runs find --hash, purge --dry-run and a log export against the fixture, prints what is erasable and what is only deletable with the workspace, and docs/dsar.md states the answer in one page.",
       "gate": "bash scripts/dsar-drill.sh",
-      "files": ["scripts/dsar-drill.sh", "docs/dsar.md"]
+      "files": [
+        "scripts/dsar-drill.sh",
+        "docs/dsar.md"
+      ]
     },
     {
       "id": "P1-6",
@@ -161,11 +212,18 @@
       "class": "auto",
       "priority": 3,
       "size": "M",
-      "depends_on": ["P0-1"],
+      "depends_on": [
+        "P0-1"
+      ],
       "why": "A workspace from an older build is currently indistinguishable from a corrupt one.",
       "accept": "Every JSON state file carries schema_version; migrate reads each older version and writes the current one; a test per version proves refusal on unknown and upgrade on known.",
       "gate": "cargo test --locked schema_version",
-      "files": ["src/store.rs", "src/migrate.rs", "tests/", "FORMAT_SPEC.md"]
+      "files": [
+        "src/store.rs",
+        "src/migrate.rs",
+        "tests/",
+        "FORMAT_SPEC.md"
+      ]
     },
     {
       "id": "P2-1",
@@ -173,11 +231,16 @@
       "class": "auto",
       "priority": 4,
       "size": "M",
-      "depends_on": ["P1-6"],
+      "depends_on": [
+        "P1-6"
+      ],
       "why": "The invariants are covered by examples, not by generated input; a chain that only survives hand-written cases is not evidence.",
       "accept": "proptest suites assert no send without a disposition, a chain that stays linked under arbitrary appends, and supersede never rewriting history; they run in CI in under a minute.",
       "gate": "cargo test --locked proptest",
-      "files": ["tests/proptest_chain.rs", "Cargo.toml"]
+      "files": [
+        "tests/proptest_chain.rs",
+        "Cargo.toml"
+      ]
     },
     {
       "id": "P2-2",
@@ -185,11 +248,17 @@
       "class": "auto",
       "priority": 4,
       "size": "M",
-      "depends_on": ["P0-5", "P1-4"],
+      "depends_on": [
+        "P0-5",
+        "P1-4"
+      ],
       "why": "An auditor should read one directory in ten minutes, not ask six questions.",
       "accept": "scripts/evidence-pack.sh collects anchors, verify output, purge reports, access review, restore drill log and the release checksums into evidence/<date>/ with an index.json naming each file and its digest.",
       "gate": "bash scripts/evidence-pack.sh && test -s evidence/index.json",
-      "files": ["scripts/evidence-pack.sh", "docs/evidence.md"]
+      "files": [
+        "scripts/evidence-pack.sh",
+        "docs/evidence.md"
+      ]
     },
     {
       "id": "P2-3",
@@ -201,7 +270,11 @@
       "why": "The checker still reports no skip link and sub-44px controls in the footer at 320.",
       "accept": "A skip link is the first tab stop on every route and is visible on focus; every link and control outside running text is at least 44px at 320 and 390; the checker's skip-link, focus-ring and tap-size checks pass.",
       "gate": "cd web && bun run test && bun run lint",
-      "files": ["web/src/components/ledger-layout.tsx", "web/src/styles.css", "web/src/components/landing-page.tsx"]
+      "files": [
+        "web/src/components/ledger-layout.tsx",
+        "web/src/styles.css",
+        "web/src/components/landing-page.tsx"
+      ]
     },
     {
       "id": "P2-4",
@@ -213,7 +286,9 @@
       "why": "main deploys production and accepts a force-push today.",
       "accept": "main requires test, msrv, web, supply-chain and coverage; force-push and deletion are off; the owner has signed the change record.",
       "gate": "gh api repos/{owner}/{repo}/branches/main/protection --jq .required_status_checks.strict",
-      "files": ["docs/branch-protection.md"]
+      "files": [
+        "docs/branch-protection.md"
+      ]
     },
     {
       "id": "P2-5",
@@ -221,11 +296,13 @@
       "class": "auto",
       "priority": 5,
       "size": "S",
-      "depends_on": ["P2-4"],
-      "why": "cargo-deny and the MSRV job exist, but nothing brings updates forward, so the tree ages until it is a project.",
+      "depends_on": [],
+      "why": "cargo-deny and the MSRV job exist, but nothing brings updates forward, so the tree ages until it is a project. The workflow can land before branch protection is on; the PRs it opens are gated by CI either way.",
       "accept": "A scheduled workflow opens one grouped PR for cargo and one for bun; both are gated by the existing CI; deny.toml is untouched.",
       "gate": "test -s .github/workflows/update.yml && grep -q 'cargo update' .github/workflows/update.yml && grep -q 'bun update' .github/workflows/update.yml",
-      "files": [".github/workflows/update.yml"]
+      "files": [
+        ".github/workflows/update.yml"
+      ]
     },
     {
       "id": "P2-6",
@@ -238,7 +315,9 @@
       "accept": "evidence/design-decision.md states accept-with-reason or port-to-kit, lists the failing checks it covers, and is signed by the product owner.",
       "gate": "test -s evidence/design-decision.md",
       "evidence": "evidence/design-decision.md",
-      "files": ["evidence/design-decision.md"]
+      "files": [
+        "evidence/design-decision.md"
+      ]
     }
   ]
 }

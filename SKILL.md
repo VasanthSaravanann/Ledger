@@ -193,6 +193,7 @@ per task, state in `.plan/state.json` written only by `scripts/plan-done.mjs`.
 node scripts/plan-next.mjs      # TASK=<id> and its GATE, or STOP=<reason>
 node scripts/plan-done.mjs <id> # runs the gate; refuses to mark a failed task done
 node scripts/plan-status.mjs    # dashboard, dependencies included
+node scripts/check-docs.mjs     # CI: every commit logged, every quoted number true
 ```
 
 Rules: one task, one commit (`<id>:` prefix), push, verify CI. A task of class `human`

@@ -29,7 +29,7 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
-### Documentation set — SKILL.md rewritten, CHANGELOG.md and PRODUCTION.md added
+### `af29e3b` — Split the docs into an operating manual, a complete log, and a production plan
 
 `SKILL.md` had grown into a history: 32 decisions, seven spec lineages, an open-work
 list — useful once, stale quickly, and duplicating the README. It is now the operating
@@ -42,6 +42,35 @@ The history moved here, commit by commit, with the reasoning and the mistakes �
 P0 blockers (delivery confirmation, restore drill, key custody, chain monitoring, purge
 rehearsal, the seven human acts), P1/P2/P3, a six-week sequence, a copy-pasteable
 go/no-go gate, and the definition of done for each surface.
+
+### `21721b5` — Turn the production plan into a loop an agent can run unattended
+
+The previous plan was a good list and a bad instruction: prose acceptance criteria, a
+six-week timeline, no way to tell whether a task was finished. It became data — 19 tasks
+in `.plan/tasks.json` with priority, dependencies, acceptance and one shell gate each —
+plus `.plan/state.json` and three runners. `plan-done.mjs` runs the gate itself and
+refuses to close a red task; `human` and `human-gated` tasks refuse to close without
+`--signed-by` and a real evidence file, so an agent cannot sign for a lawyer. Two failed
+attempts block a task; three blocked in a row end the run.
+
+### Make the docs checkable, and fix the two defects it found
+
+This commit adds `scripts/check-docs.mjs` and wires it into CI, then fixes what it found:
+
+- `CHANGELOG.md` was missing `af29e3b` and `21721b5` — the log claimed "every commit"
+  and did not have them. Both now have entries.
+- `P2-5` (dependency automation, class `auto`) declared a dependency on `P2-4` (branch
+  protection, `human-gated`). The loop would have run out of runnable work and stopped
+  with a person's task as the reason — a deadlock disguised as an empty backlog. The
+  dependency is gone: the workflow can land before protection exists.
+- `plan-next.mjs` now refuses a plan it cannot drain: a dependency that is not in the
+  backlog, a cycle, or an `auto` task waiting on a non-`auto` one exits 2 with the
+  offending pair named.
+
+`check-docs.mjs` asserts three things on every push: every commit is in this file (by
+sha, or by subject for HEAD), the numbers `SKILL.md` quotes match the tree (33 modules,
+6 routes, 11 `--json` flags, 136 tests, 144 with `ui`, counted from `cargo test --list`),
+and every promised document exists.
 
 ### `7263d0e` — Remove every trace of the generator from the web app
 

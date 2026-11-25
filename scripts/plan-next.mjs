@@ -27,6 +27,37 @@ for (const id of Object.keys(state.tasks)) {
   }
 }
 
+// A plan that cannot drain is worse than no plan: refuse to run one.
+for (const t of tasks.tasks) {
+  for (const dep of t.depends_on ?? []) {
+    if (!byId.has(dep)) {
+      console.error(`${t.id} depends on ${dep}, which is not in the backlog`);
+      process.exit(2);
+    }
+    if (t.class === "auto" && byId.get(dep).class !== "auto") {
+      console.error(
+        `${t.id} is "auto" but depends on ${dep} ("${byId.get(dep).class}"): the loop would wait on a person. ` +
+          `Drop the dependency or change ${t.id}'s class.`,
+      );
+      process.exit(2);
+    }
+  }
+}
+const seen = new Set();
+const stack = new Set();
+(function visit(t) {
+  if (stack.has(t.id)) {
+    console.error(`dependency cycle through ${t.id}`);
+    process.exit(2);
+  }
+  if (seen.has(t.id)) return;
+  seen.add(t.id);
+  stack.add(t.id);
+  for (const dep of t.depends_on ?? []) visit(byId.get(dep));
+  stack.delete(t.id);
+})(tasks.tasks[0]);
+
+
 const status = (id) => state.tasks[id]?.status ?? "todo";
 const unmet = (t) => (t.depends_on ?? []).filter((d) => status(d) !== "done");
 const ready = tasks.tasks
