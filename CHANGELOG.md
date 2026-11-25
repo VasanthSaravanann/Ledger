@@ -29,6 +29,23 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P0-3 Write the key custody and rotation procedure
+
+Identity was an Ed25519 keyfile at `0600` with no documented holder, rotation path, or
+meaning of a lost key. `docs/key-custody.md` now names the five keys a pilot needs
+(two approvers, two coordinators, one auditor), where each private half lives
+(`operators/<name>.key`, `0700` directory, `0600` file, no passphrase), what `Role::permits`
+lets each sign, and why the fleet ships no real keys and no invented people: the names
+are the rows of `operators.json` and the signed access review.
+
+Rotation is by a **new identity**, never an in-place re-key: the registry refuses a
+duplicate name, and every `Signed` record embeds the public key it was made with, so
+old signatures keep verifying after rotation and `verify-signatures` keeps reporting
+them `valid`. Re-signing an unchanged artefact is refused (`AlreadySignedOff`), which
+is why the doc says the new key signs the next copy. Loss costs the ability to sign new
+records as that name — nothing else — and a leaked key is worse than a lost one because
+there is no revocation list.
+
 ### P0-2 Prove backup and restore on a fresh directory
 
 `backups/` existed and dispatch snapshotted into it, but no restore had ever been

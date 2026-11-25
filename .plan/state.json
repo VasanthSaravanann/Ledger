@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-11-25T04:10:30.347Z",
+  "updated": "2026-11-25T04:12:20.205Z",
   "tasks": {
     "P0-1": {
       "status": "done",
@@ -17,10 +17,11 @@
       "signed_by": null
     },
     "P0-3": {
-      "status": "todo",
-      "attempts": 0,
-      "commit": null,
-      "note": null
+      "status": "done",
+      "attempts": 1,
+      "commit": "fd1366d",
+      "note": "gate green",
+      "signed_by": null
     },
     "P0-4": {
       "status": "todo",
@@ -120,6 +121,13 @@
     }
   },
   "log": [
+    {
+      "at": "2026-11-25T04:12:20.205Z",
+      "id": "P0-3",
+      "event": "done",
+      "commit": "fd1366d",
+      "signed_by": null
+    },
     {
       "at": "2026-11-25T04:10:30.347Z",
       "id": "P0-2",
