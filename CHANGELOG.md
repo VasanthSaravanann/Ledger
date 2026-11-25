@@ -29,6 +29,19 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P2-5 Automate dependency updates behind the same gate
+
+`cargo-deny` and the MSRV job existed, but nothing brought updates forward, so the tree
+aged until it became a project. `.github/workflows/update.yml` runs weekly (Monday 05:00
+UTC) and opens two grouped pull requests: one from `cargo update` on `Cargo.lock`, one
+from `bun update` in `web/`. Each PR is proven locally first — `cargo test --locked` for
+Rust, lint, tests and the Vercel build for the web — and then gated again by the existing
+`ci` workflow, so a dependency that raises the MSRV fails the `msrv` job and stays open.
+The branches are fixed (`deps/cargo`, `deps/bun`), so next week updates the same PR
+instead of multiplying them. `deny.toml`, `clippy.toml` and the coverage floors are
+untouched: the update adapts to the checks, never the other way round. Merging stays a
+human decision.
+
 ### P2-3 Close the accessibility findings on the preview
 
 The checker still reported no skip link and sub-44px controls in the footer at 320. Both

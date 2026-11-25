@@ -1,0 +1,88 @@
+name: update
+
+# Dependency updates, brought forward on a schedule instead of discovered when the tree
+# has aged. Two jobs, two pull requests, one per ecosystem, both gated by ci.yml like any
+# other push. deny.toml, clippy.toml and the coverage floors are not touched: an update
+# that fails them is a PR that stays red, which is the point.
+
+on:
+  schedule:
+    # Weekly, Monday 05:00 UTC: after the Monday ci run, before the working day.
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cargo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Update the lock file
+        run: cargo update
+      - name: Prove the tree still builds and passes before opening the PR
+        run: cargo test --locked
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          # A fixed branch: last week's PR is updated, not multiplied.
+          branch: deps/cargo
+          delete-branch: false
+          title: "deps: cargo update (weekly)"
+          commit-message: |
+            deps: cargo update
+
+            `cargo test --locked` passed on the lock this PR adds. Deny, clippy and the
+            coverage floors are unchanged, so the PR passes or fails on its merits.
+          body: |
+            One grouped cargo update, opened by `.github/workflows/update.yml`.
+
+            - `cargo update` only; `Cargo.toml` ranges and `deny.toml` are untouched.
+            - The full `ci` workflow runs on this PR: fmt, clippy, tests, MSRV 1.85,
+              web, supply chain, coverage. A dependency that raises the MSRV fails the
+              `msrv` job and this PR stays open.
+            - Merging is a human decision: a lock file is part of the evidence trail.
+          add-paths: Cargo.lock
+
+  bun:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Update the web dependencies
+        run: bun update
+      - name: Prove the preview still passes before opening the PR
+        run: |
+          bun install --frozen-lockfile
+          bun run lint
+          bun run test
+          bun run build
+        env:
+          NITRO_PRESET: vercel
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          branch: deps/bun
+          delete-branch: false
+          title: "deps: bun update (weekly)"
+          commit-message: |
+            deps: bun update
+
+            Lint, tests and the Vercel build passed on the lock this PR adds.
+          body: |
+            One grouped bun update, opened by `.github/workflows/update.yml`.
+
+            - `bun update` in `web/`; no other change.
+            - The `web` job in `ci` runs the same lint, tests and build again.
+            - A major that breaks a component fails here, not in production.
+          add-paths: web/package.json,web/bun.lock
