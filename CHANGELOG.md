@@ -29,6 +29,21 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P1-2 Write the incident runbook
+
+The first responder would have had to read the repository at 2am. `docs/incident-runbook.md`
+covers six incidents — a torn tail, failed verification, a lost key, a wrong disposition,
+a hostile reply and a data-subject request — and gives each the same shape: copy the
+whole workspace first (including `operators/` and `anchors/`), three commands in order,
+the decision owner, and the evidence to keep. It names roles through the files that
+already name people (`governance show` for the escalation owner, `operators.json` and the
+access review for the rest) rather than inventing a roster, and ends each section with
+what not to do, because the likely 2am mistake is to edit the thing that proves it.
+
+Every command in it exists and is quoted with its real flags; every failure message is
+the one the binary prints. The six headings are the six words the gate greps for, so the
+document cannot lose a section silently.
+
 ### P1-1 Emit --json from every command
 
 Eleven of 25 commands printed prose, and only that: a runbook could not consume a single
