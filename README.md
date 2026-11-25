@@ -117,7 +117,7 @@ emails committed:   147
 blocked:            3
 stale versions:     1
 log head:           d347a639fff01dadf90822d5f833b0b76ba5d7b3d8fec39d0a78491d7b6c897b
-fingerprint:        64f9e1f9e8b4b9ce30c38f2f7c82c904906e5c4c2d9d23caf5eca6df73833ca2
+fingerprint:        e0a91f66194e8f76d51878aadd52fd2987084acb4bc90f88d94a42b52e3c3b02
 ```
 
 Verify it without trusting the binary:

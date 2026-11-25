@@ -535,9 +535,38 @@ impl Requisition {
 
 /// Every requisition the pilot knows about.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(from = "RequisitionBookFile", into = "RequisitionBookFile")]
 pub struct RequisitionBook {
     items: Vec<Requisition>,
+}
+
+/// The stored shape: a bare array before state documents were versioned, and a named
+/// field now. `schema_version` lives beside the field and is added by `Store::save`.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum RequisitionBookFile {
+    /// The pre-versioning `requisitions.json`: one JSON array.
+    Legacy(Vec<Requisition>),
+    /// The current `requisitions.json` body.
+    Named { requisitions: Vec<Requisition> },
+}
+
+impl From<RequisitionBookFile> for RequisitionBook {
+    fn from(file: RequisitionBookFile) -> Self {
+        let items = match file {
+            RequisitionBookFile::Legacy(items) => items,
+            RequisitionBookFile::Named { requisitions } => requisitions,
+        };
+        Self { items }
+    }
+}
+
+impl From<RequisitionBook> for RequisitionBookFile {
+    fn from(value: RequisitionBook) -> Self {
+        Self::Named {
+            requisitions: value.items,
+        }
+    }
 }
 
 impl RequisitionBook {

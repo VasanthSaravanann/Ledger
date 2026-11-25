@@ -57,6 +57,12 @@ pub const DELIVERY: &str = "delivery.jsonl";
 /// The advisory lock file guarding the workspace.
 pub const LOCK: &str = ".lock";
 
+/// The schema version every state document carries.
+///
+/// The send log has its own, per-entry version ([`crate::log::SCHEMA_VERSION`]); this
+/// one covers the documents `Store::load`/`Store::save` read and write.
+pub const STATE_SCHEMA_VERSION: u32 = 1;
+
 /// The pilot workspace.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Store {
@@ -88,6 +94,15 @@ pub fn write_secret(path: &Path, bytes: &[u8]) -> Result<()> {
         path: path.to_path_buf(),
         source,
     })
+}
+
+/// The `schema_version` a parsed document declares, when it declares one.
+fn declared_version(value: &serde_json::Value) -> Option<u32> {
+    value
+        .as_object()
+        .and_then(|object| object.get("schema_version"))
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|version| u32::try_from(version).ok())
 }
 
 /// Sets file permissions to `0600` (or the mode given) on Unix; no-op elsewhere.
@@ -157,10 +172,15 @@ impl Store {
 
     /// Loads a JSON document, or `None` when it does not exist yet.
     ///
+    /// A document may carry `schema_version`; one this build does not know fails
+    /// closed rather than being misread. A document written before versioning has no
+    /// version and is read as version 0.
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::Io`] when the file exists but cannot be read, and
-    /// [`Error::Json`] when it is not valid JSON.
+    /// Returns [`Error::Io`] when the file exists but cannot be read,
+    /// [`Error::Json`] when it is not valid JSON, and [`Error::Invalid`] when the
+    /// declared schema version is newer than this build.
     pub fn load<T: DeserializeOwned>(&self, name: &str) -> Result<Option<T>> {
         let path = self.path(name);
         let text = match fs::read_to_string(&path) {
@@ -168,19 +188,61 @@ impl Store {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(source) => return Err(Error::Io { path, source }),
         };
-        Ok(Some(serde_json::from_str(&text)?))
+        let value: serde_json::Value = serde_json::from_str(&text)?;
+        if let Some(version) = declared_version(&value) {
+            if version > STATE_SCHEMA_VERSION {
+                return Err(Error::invalid(
+                    "schema_version",
+                    format!(
+                        "{name} declares schema_version {version} but this build knows \
+                         {STATE_SCHEMA_VERSION}; upgrade ledger rather than downgrading the data"
+                    ),
+                ));
+            }
+        }
+        Ok(Some(serde_json::from_value(value)?))
+    }
+
+    /// The schema version a state document declares, or `None` when it is absent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] or [`Error::Json`] when the file cannot be read.
+    pub fn raw_version(&self, name: &str) -> Result<Option<u32>> {
+        let path = self.path(name);
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(source) => return Err(Error::Io { path, source }),
+        };
+        let value: serde_json::Value = serde_json::from_str(&text)?;
+        Ok(Some(declared_version(&value).unwrap_or(0)))
     }
 
     /// Writes a JSON document atomically: temp file, fsync, rename, fsync dir.
     ///
+    /// Every document is an object stamped with [`STATE_SCHEMA_VERSION`], so a reader
+    /// can tell an older workspace from a corrupt one.
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::Io`] when the file cannot be written and
-    /// [`Error::Json`] when the document cannot be serialized.
+    /// Returns [`Error::Io`] when the file cannot be written, [`Error::Json`] when the
+    /// document cannot be serialized, and [`Error::Invalid`] when it is not an object.
     pub fn save<T: Serialize>(&self, name: &str, value: &T) -> Result<()> {
         let path = self.path(name);
         let temp = path.with_extension("json.tmp");
-        let mut text = serde_json::to_string_pretty(value)?;
+        let mut document = serde_json::to_value(value)?;
+        let Some(object) = document.as_object_mut() else {
+            return Err(Error::invalid(
+                "state document",
+                format!("{name} must serialise to an object so it can carry schema_version"),
+            ));
+        };
+        object.insert(
+            "schema_version".to_owned(),
+            serde_json::Value::from(STATE_SCHEMA_VERSION),
+        );
+        let mut text = serde_json::to_string_pretty(&document)?;
         text.push('\n');
 
         let mut file = File::create(&temp).map_err(|source| Error::Io {

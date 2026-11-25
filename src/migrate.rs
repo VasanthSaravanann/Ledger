@@ -14,14 +14,28 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::log::{SCHEMA_VERSION, SendLog};
 use crate::operator::{OperatorLog, OperatorNote};
-use crate::store::{self, Store};
+use crate::store::{self, STATE_SCHEMA_VERSION, Store};
+
+/// Every fixed-name state document this build knows how to version.
+const STATE_FILES: [&str; 9] = [
+    store::GATE_LIBRARY,
+    store::TEMPLATES,
+    store::PLAYBOOK,
+    store::REQUISITIONS,
+    store::POLICY,
+    store::REVIEW,
+    store::CHECKLIST,
+    store::OPERATORS,
+    store::DEMO_SUMMARY,
+];
 
 /// What a migration run found and did.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MigrateReport {
     /// The snapshot the run took first.
     pub snapshot: PathBuf,
-    /// The newest schema version found in the workspace.
+    /// The oldest schema version found in the workspace; 0 when any document
+    /// predates versioning, and also 0 for an empty workspace.
     pub found_version: u32,
     /// The version this build writes.
     pub target_version: u32,
@@ -38,7 +52,7 @@ pub struct MigrateReport {
 pub fn inspect(store: &Store) -> Result<(u32, usize)> {
     let log = SendLog::open(store)?;
     let entries = log.entries()?;
-    let mut newest = 0;
+    let mut oldest = u32::MAX;
     for entry in &entries {
         if entry.schema_version > SCHEMA_VERSION {
             return Err(Error::invalid(
@@ -50,9 +64,77 @@ pub fn inspect(store: &Store) -> Result<(u32, usize)> {
                 ),
             ));
         }
-        newest = newest.max(entry.schema_version);
+        oldest = oldest.min(entry.schema_version);
     }
-    Ok((newest, entries.len()))
+    for name in state_files(store)? {
+        let Some(version) = store.raw_version(&name)? else {
+            continue;
+        };
+        if version > STATE_SCHEMA_VERSION {
+            return Err(Error::invalid(
+                "schema",
+                format!(
+                    "{name} declares schema_version {version} but this build knows \
+                     {STATE_SCHEMA_VERSION}; upgrade ledger rather than downgrading the data"
+                ),
+            ));
+        }
+        oldest = oldest.min(version);
+    }
+    Ok((if oldest == u32::MAX { 0 } else { oldest }, entries.len()))
+}
+
+/// Every state document present: the fixed names, plus one roster per requisition.
+fn state_files(store: &Store) -> Result<Vec<String>> {
+    let mut names: Vec<String> = STATE_FILES.iter().map(|name| (*name).to_owned()).collect();
+    for entry in fs::read_dir(store.root()).map_err(|source| Error::Io {
+        path: store.root().to_path_buf(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| Error::Io {
+            path: store.root().to_path_buf(),
+            source,
+        })?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with("roster-") && name.ends_with(".json") {
+            names.push(name);
+        }
+    }
+    names.sort();
+    Ok(names)
+}
+
+/// Rewrites one older state document through its typed form, then proves it reads back.
+fn upgrade_document(store: &Store, name: &str) -> Result<()> {
+    macro_rules! rewrite {
+        ($kind:ty) => {{
+            if let Some(document) = store.load::<$kind>(name)? {
+                store.save(name, &document)?;
+                store.load::<$kind>(name)?.ok_or_else(|| {
+                    Error::invalid("schema", format!("{name} disappeared during migration"))
+                })?;
+            }
+        }};
+    }
+    match name {
+        store::GATE_LIBRARY => rewrite!(crate::gate::GateLibrary),
+        store::TEMPLATES => rewrite!(crate::template::Templates),
+        store::PLAYBOOK => rewrite!(crate::playbook::Playbook),
+        store::REQUISITIONS => rewrite!(crate::requisition::RequisitionBook),
+        store::POLICY => rewrite!(crate::policy::Policy),
+        store::REVIEW => rewrite!(crate::review::Reviews),
+        store::CHECKLIST => rewrite!(crate::checklist::Checklist),
+        store::OPERATORS => rewrite!(crate::identity::Registry),
+        store::DEMO_SUMMARY => rewrite!(crate::demo::DemoSummary),
+        roster if roster.starts_with("roster-") => rewrite!(crate::ats::Roster),
+        other => {
+            return Err(Error::invalid(
+                "schema",
+                format!("{other} is not a state document this build can migrate"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Snapshots the workspace, then migrates what may be migrated.
@@ -69,11 +151,28 @@ pub fn migrate(store: &Store, operator: &str) -> Result<MigrateReport> {
     snapshot_workspace(store, &snapshot)?;
 
     let mut changes = Vec::new();
-    if found_version == 0 {
-        // Nothing to migrate: either an empty workspace or a pre-versioned log,
-        // whose entries default to version 1 on read.
+    for name in state_files(store)? {
+        match store.raw_version(&name)? {
+            None => {}
+            Some(version) if version == STATE_SCHEMA_VERSION => {}
+            Some(version) if version > STATE_SCHEMA_VERSION => {
+                // `inspect` already refused this; re-check rather than write under it.
+                return Err(Error::invalid(
+                    "schema",
+                    format!("{name} declares schema_version {version}; refusing to migrate"),
+                ));
+            }
+            Some(version) => {
+                upgrade_document(store, &name)?;
+                changes.push(format!(
+                    "{name}: schema_version {version} -> {STATE_SCHEMA_VERSION}"
+                ));
+            }
+        }
+    }
+    if changes.is_empty() {
         changes.push(format!(
-            "no rewrite required: entries default to schema_version {SCHEMA_VERSION}"
+            "no rewrite required: state documents are at schema_version {STATE_SCHEMA_VERSION}"
         ));
     }
 
@@ -89,10 +188,11 @@ pub fn migrate(store: &Store, operator: &str) -> Result<MigrateReport> {
         details,
     })?;
 
+    let target_version = STATE_SCHEMA_VERSION.max(SCHEMA_VERSION);
     Ok(MigrateReport {
         snapshot,
         found_version,
-        target_version: SCHEMA_VERSION,
+        target_version,
         changes,
     })
 }

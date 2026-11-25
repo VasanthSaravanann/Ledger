@@ -29,6 +29,47 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P1-6 Version every state document, not just the send log
+
+A workspace from an older build was indistinguishable from a corrupt one. Every state
+document `Store::load`/`Store::save` touches now carries a top-level `"schema_version":
+1` — `gate_library.json`, `templates.json`, `playbook.json`, `requisitions.json`,
+`policy.json`, `review.json`, `checklist.json`, `operators.json`, `demo-summary.json` and
+each `roster-<REQ>.json`. `Store::load` refuses a version it does not know (exit 3, file
+untouched); `ledger migrate` snapshots first, then rewrites only state documents, and
+reports each one by name. It never touches `send_log.jsonl` or `delivery.jsonl`, which is
+asserted by comparing the log's bytes across a migration.
+
+Four documents were bare JSON arrays before versioning — `operators.json`,
+`requisitions.json`, `checklist.json` and `review.json` — and a version-1 document must be
+an object to carry the field. Each type now serialises as a named field and still
+*deserialises* the legacy array, so a pre-versioning workspace can be read, migrated and
+only then written. `Store::save` refuses a non-object rather than silently dropping the
+version. `FORMAT_SPEC.md` §8.1 is the normative description.
+
+The fixture moved: the workspace fingerprint is now `e0a91f66…` because the documents
+gained a field. The send-log digest, its head `d347a639…` and the dispositions digest did
+not move, which is the point. `tests/schema_version.rs` proves the stamp on every file,
+refusal before any snapshot on an unknown version, the v0 → v1 upgrade for the four array
+shapes and an idempotent second run.
+
+### P1-5 Drill the data-subject request path
+
+"What do you hold about me?" had a different answer for unchained state than for the send
+log, and nobody had walked it. `scripts/dsar-drill.sh` now walks it on the fixture:
+computes the redacted handle, resolves it with `find --hash`, exports the requisition with
+`log export`, previews retention with `purge --dry-run`, and prints the split. On the
+fixture: 1 matching disposition, 1 of 147 send rows for `APP-1001`, and 0 dispositions
+purged because the 2557-day cutoff lands in 2019 — the retention clock has not run. The
+last line states the design plainly: erasing a chained send means deleting the workspace,
+never editing a line.
+
+`docs/dsar.md` is the one-page answer: who decides, the three commands, which store holds
+what and whether it is tombstoned in place or only with the workspace, why backups count,
+and what the drill does not prove (identity, replicas, jurisdiction, erasing one person
+from a chain). `purge` is a mutating command even when it only previews, so the drill
+reads an approver from the fixture's registry rather than assuming a name.
+
 ### P1-4 Cut and verify release v0.1.0
 
 `release.yml` existed but no tag had ever been pushed, so there was no downloadable

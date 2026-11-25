@@ -119,9 +119,38 @@ pub struct Completion {
 
 /// The completed tasks.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(from = "ChecklistFile", into = "ChecklistFile")]
 pub struct Checklist {
     completions: Vec<Completion>,
+}
+
+/// The stored shape: a bare array before state documents were versioned, and a named
+/// field now. `schema_version` lives beside the field and is added by `Store::save`.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum ChecklistFile {
+    /// The pre-versioning `checklist.json`: one JSON array.
+    Legacy(Vec<Completion>),
+    /// The current `checklist.json` body.
+    Named { completions: Vec<Completion> },
+}
+
+impl From<ChecklistFile> for Checklist {
+    fn from(file: ChecklistFile) -> Self {
+        let completions = match file {
+            ChecklistFile::Legacy(completions) => completions,
+            ChecklistFile::Named { completions } => completions,
+        };
+        Self { completions }
+    }
+}
+
+impl From<Checklist> for ChecklistFile {
+    fn from(value: Checklist) -> Self {
+        Self::Named {
+            completions: value.completions,
+        }
+    }
 }
 
 impl Checklist {

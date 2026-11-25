@@ -47,7 +47,7 @@ visible, not so that a specific number becomes a promise.
 
 ## Why the fingerprint is computed, not read
 
-`ledger demo seed --record` prints the summary fingerprint `64f9e1f9…`, which is
+`ledger demo seed --record` prints the summary fingerprint `e0a91f66…`, which is
 the value `demo::seed` computes over the files it wrote. The CLI then appends one
 line to `operator.jsonl` for the command it just ran — carrying the real clock and
 the process id — so the directory on disk has one more file than the summary saw,

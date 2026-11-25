@@ -1,8 +1,8 @@
 # Ledger on-disk format and digest specification
 
 **Version:** `digest_version = 2`, `schema_version = 1`
-**Status:** implemented for the send log and the delivery-confirmation log; state
- documents are unversioned (see §10).
+**Status:** implemented for the send log, the delivery-confirmation log and every state
+ document.
 
 This document is normative. `verify_log.py` and the Rust implementation are both
 written against it, and the golden fixtures in `tests/golden.rs` pin it.
@@ -140,15 +140,41 @@ an independent verifier possible.
 
 ## 8. Schema version
 
-`send_log.jsonl` entries carry `"schema_version": 1`.
+There are two version numbers, both `1` in this build:
 
-- A reader must reject any entry whose `schema_version` is greater than the
-  version it knows, with the reason `unknown schema_version`.
-- `schema_version` is not covered by the digest (§4), so bumping it does not
-  invalidate prior digests.
-- Adding an optional field is a non-breaking change when the field is outside the
-  digest allowlist; adding a field **to** the allowlist is a `digest_version` bump
-  and requires regenerating golden fixtures.
+- `send_log.jsonl` entries carry `"schema_version": 1` per line (and
+  `delivery.jsonl` carries its entry type instead, §11);
+- every **state document** carries a top-level `"schema_version": 1`.
+
+### 8.1 State documents
+
+A state document is any JSON file `Store::load`/`Store::save` read and write:
+`gate_library.json`, `templates.json`, `playbook.json`, `requisitions.json`,
+`policy.json`, `review.json`, `checklist.json`, `operators.json`,
+`demo-summary.json`, and one `roster-<REQ>.json` per requisition. Each is one JSON
+object whose other keys are the document; `schema_version` sits beside them.
+
+- A reader **must reject** a document whose `schema_version` is greater than the
+  version it knows, with the reason `schema_version`. The file is left untouched.
+- A document with no `schema_version` is version **0**: the shape written before
+  documents were versioned. Version 0 is read, and `ledger migrate` rewrites it as
+  version 1.
+- Four documents were bare JSON arrays at version 0. Their version-1 shape names the
+  array:
+
+  | File | Version 0 | Version 1 |
+  | --- | --- | --- |
+  | `operators.json` | `[…]` | `{"schema_version":1,"operators":[…]}` |
+  | `requisitions.json` | `[…]` | `{"schema_version":1,"requisitions":[…]}` |
+  | `checklist.json` | `[…]` | `{"schema_version":1,"completions":[…]}` |
+  | `review.json` | `[…]` | `{"schema_version":1,"records":[…]}` |
+
+- `schema_version` is **not** digest-covered. It is metadata for readers, exactly like
+  the per-entry field below.
+- A migration never rewrites `send_log.jsonl` or `delivery.jsonl`; it snapshots the
+  workspace first and only rewrites state documents.
+- Adding an optional field is a non-breaking change; a change to the digest allowlist
+  (§4) is a `digest_version` bump and requires regenerating golden fixtures.
 
 ## 9. Independent verification
 
@@ -165,15 +191,13 @@ so the two cannot drift apart silently.
 
 Honest list, so the spec is not mistaken for more than it is:
 
-1. State documents are not stamped with `schema_version` yet. They fail closed only
-   in the sense that a missing required field is a deserialisation error.
-2. The disposition, QA, blocked, reply and signal logs are append-only in code but
+1. The disposition, QA, blocked, reply and signal logs are append-only in code but
    not chained; each line is plain JSON with no digest.
-3. `operator.jsonl` exists for `log quarantine` only; the other mutating commands
-   are not yet written to it.
-4. `delivery.jsonl` is verified by this crate but not yet by `verify_log.py`; the
+2. `operator.jsonl` records every mutating command, but `log quarantine` is the only
+   one whose note carries structured evidence of the repair.
+3. `delivery.jsonl` is verified by this crate but not yet by `verify_log.py`; the
    independent verifier covers the send log alone.
-5. The chain is a local file. Anyone with write access to the directory can replace
+4. The chain is a local file. Anyone with write access to the directory can replace
    the whole file with a re-chained forgery; only off-host replication closes that.
    See `THREAT_MODEL.md`.
 

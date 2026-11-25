@@ -99,9 +99,38 @@ pub struct CriteriaRecord {
 
 /// The feasibility decisions, latest per requisition.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(from = "ReviewsFile", into = "ReviewsFile")]
 pub struct Reviews {
     records: Vec<CriteriaRecord>,
+}
+
+/// The stored shape: a bare array before state documents were versioned, and a named
+/// field now. `schema_version` lives beside the field and is added by `Store::save`.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum ReviewsFile {
+    /// The pre-versioning `review.json`: one JSON array.
+    Legacy(Vec<CriteriaRecord>),
+    /// The current `review.json` body.
+    Named { records: Vec<CriteriaRecord> },
+}
+
+impl From<ReviewsFile> for Reviews {
+    fn from(file: ReviewsFile) -> Self {
+        let records = match file {
+            ReviewsFile::Legacy(records) => records,
+            ReviewsFile::Named { records } => records,
+        };
+        Self { records }
+    }
+}
+
+impl From<Reviews> for ReviewsFile {
+    fn from(value: Reviews) -> Self {
+        Self::Named {
+            records: value.records,
+        }
+    }
 }
 
 impl Reviews {

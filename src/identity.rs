@@ -124,9 +124,38 @@ pub struct Operator {
 
 /// The operator registry.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(from = "RegistryFile", into = "RegistryFile")]
 pub struct Registry {
     operators: Vec<Operator>,
+}
+
+/// The stored shape: a bare array before state documents were versioned, and a named
+/// field now. `schema_version` lives beside the field and is added by `Store::save`.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum RegistryFile {
+    /// The pre-versioning `operators.json`: one JSON array.
+    Legacy(Vec<Operator>),
+    /// The current `operators.json` body.
+    Named { operators: Vec<Operator> },
+}
+
+impl From<RegistryFile> for Registry {
+    fn from(file: RegistryFile) -> Self {
+        let operators = match file {
+            RegistryFile::Legacy(operators) => operators,
+            RegistryFile::Named { operators } => operators,
+        };
+        Self { operators }
+    }
+}
+
+impl From<Registry> for RegistryFile {
+    fn from(value: Registry) -> Self {
+        Self::Named {
+            operators: value.operators,
+        }
+    }
 }
 
 impl Registry {

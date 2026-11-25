@@ -40,7 +40,7 @@ hosted tenancy, no Windows binary, no generated static site.
 
 - Rust 2024, MSRV **1.85** (compiled in CI), 11 direct crates, **no network crates** in
   the default graph. Optional `ui` feature adds axum + tokio.
-- 34 modules, ~15.7k lines, **148 tests** (156 with `--features ui`).
+- 34 modules, ~15.7k lines, **152 tests** (160 with `--features ui`).
 - 26 top-level CLI commands, `--json` on every one (a single global flag).
 - Web: 6 routes, 6 tests, eslint 0 errors (7 known `react-refresh` warnings).
 - Deployed at **https://ledger-pilot-chi.vercel.app** from `web/` on every push to
@@ -130,7 +130,7 @@ tail) · `4` lock contention.
 | A delivery status changes only by appending a confirmation | `DeliveryLog::confirm`, `effective_status` |
 | Roles gate commands and requests | `Role::permits` at CLI and HTTP |
 | One writer per workspace | `Store::lock` (flock) |
-| The fixture is reproducible | fixed clock, derived keys → `64f9e1f9…`, head `d347a639…` |
+| The fixture is reproducible | fixed clock, derived keys → `e0a91f66…`, head `d347a639…` |
 | Independent verification agrees | `verify_log.py` vs the Rust chain |
 
 ## 7. Running and shipping

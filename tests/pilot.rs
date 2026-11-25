@@ -775,8 +775,15 @@ fn timestamps_round_trip_through_the_workspace_files() {
     let at: DateTime<Utc> = chrono::TimeZone::with_ymd_and_hms(&Utc, 2026, 11, 24, 9, 0, 0)
         .single()
         .expect("timestamp");
-    store.save("stamp.json", &at).expect("save timestamp");
-    let loaded: DateTime<Utc> = store.load("stamp.json").expect("load").expect("present");
-    assert_eq!(loaded, at);
+    // State documents are objects so they can carry schema_version.
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Stamp {
+        at: DateTime<Utc>,
+    }
+    store
+        .save("stamp.json", &Stamp { at })
+        .expect("save timestamp");
+    let loaded: Stamp = store.load("stamp.json").expect("load").expect("present");
+    assert_eq!(loaded.at, at);
     let _ = fs::remove_dir_all(&dir);
 }
