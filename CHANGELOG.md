@@ -1,0 +1,253 @@
+# Changelog — the complete log
+
+Every commit in this repository, what it changed, and the reasoning that is not
+recoverable from the diff. Newest first. This is a log, not a release note: it records
+what was tried, what was removed on purpose, and the mistakes worth not repeating.
+
+- 28 commits, 24–25 November 2026.
+- Specs that drove the work (`plan.md`, `V2.md`…`website.md`) are no longer in the
+  tree; they remain readable at `git show 90dfcb6:V2.md`.
+- Architecture and current invariants: `SKILL.md`. What is still missing: `PRODUCTION.md`.
+
+## At a glance
+
+| Phase | Commits | Outcome |
+| --- | --- | --- |
+| v1 pilot | `d6bf2fa` | gate copy, three templates, locked form, chained log, three metrics |
+| Static page | `ec66e4a` | first deployable surface (later removed) |
+| V2 audit-grade | `acbff64` | GATE/FIELD/ADMIN, versioned gates + facts, paragraph lint, QA sampling, five metrics, routing |
+| V3 fixture + site | `7d8d9be` | deterministic fixture, artefact pages, build wiring |
+| V4 hardening | `3a7a1b9` | canonical digest v2, crash safety, quarantine, goldens, independent verifier, CI |
+| V5 operational | `24145c9`, `bb8ee69`, `c7cc82d`, `16a1caa`, `3f880a2` | CI green, retention/migrate/anchor, Ed25519 + RBAC, drift, drafted dispatch |
+| Workspace UI | `7c5326c`, `65b6c22`, `f69e57b`, `43c86bf`, `f71d930` | local `ledger ui`, snapshots, product page + lab, a11y/XSS review |
+| Docs | `90dfcb6` | first `SKILL.md` |
+| Turn to the web app | `dc1e40b`, `fa19dcc`, `856a35a` | artefact site removed, exported workspace preview, landing page, lint gated |
+| Design passes | `959950d`, `18f2f7e`, `047744e`, `bd8ad02`, `f89ac5e` | tasteskill pass, one system, testability, contrast, operator rename |
+| Repo quality | `3e26214`, `d2b7a70`, `adf8044`, `7263d0e` | README rewritten, canonical URLs, generator traces removed |
+
+---
+
+## 2026-11-25
+
+### Documentation set — SKILL.md rewritten, CHANGELOG.md and PRODUCTION.md added
+
+`SKILL.md` had grown into a history: 32 decisions, seven spec lineages, an open-work
+list — useful once, stale quickly, and duplicating the README. It is now the operating
+manual (196 lines): what the two surfaces are and which one records, current verified
+numbers, the repo map, twelve decisions that must not be reversed, the invariant-to-test
+table, run/test/deploy commands, the ten gotchas that have actually bitten, and pointers.
+
+The history moved here, commit by commit, with the reasoning and the mistakes — including
+`3e26214`, which contained only a `.pyc`. `PRODUCTION.md` is new: readiness at a glance,
+P0 blockers (delivery confirmation, restore drill, key custody, chain monitoring, purge
+rehearsal, the seven human acts), P1/P2/P3, a six-week sequence, a copy-pasteable
+go/no-go gate, and the definition of done for each surface.
+
+### `7263d0e` — Remove every trace of the generator from the web app
+
+The preview still carried its scaffolding: `.lovable/`, a prompt-managed `AGENTS.md`,
+boilerplate README, an error reporter that poked `window.__lovableEvents`, a build-config
+package in `package.json`/`bun.lock`, a preview-proxy wrapper whose default target was a
+Cloudflare Worker, and the generator's favicon.
+
+Replaced rather than deleted: `vite.config.ts` is now plain TanStack Start (tailwind,
+tsconfig paths, Start plugin with the same import protection, Nitro, React), with
+Nitro's default preset set to `vercel` so `bun run build` needs no environment variable.
+`public/favicon.svg` is the Ledger mark and `/favicon.ico` 308s to it. The three
+architecture rules that were ours moved into `web/README.md`.
+
+### `adf8044` — Give every page its own canonical and og:url
+
+No route declared its address, so a share of `/audit` advertised whatever URL the crawler
+had. One `SITE_URL` in `web/src/lib/site.ts` now feeds `<link rel="canonical">` and
+`og:url` for all six routes.
+
+### `f89ac5e` — Rename the workspace operator to John, and say what he is
+
+The sidebar read "Vasanth S / Coordinator preview" — a personal name where a session
+role belongs, and "preview" for the third time on one screen. Now "John" with the role
+under it, "Coordinator" (the RBAC vocabulary); the audit trail says "John · Recruitment
+coordinator". Plates re-shot because each one shows that block.
+
+### `3e26214`, `d2b7a70` — Rewrite the README around replication
+
+The old quick start **could not run**: it approved gate copy before any operator existed,
+and after the first `operator register` every later command was refused because the first
+registered operator becomes the acting identity and a coordinator may not run `operator`.
+It linked `plan.md`/`V2.md` (not in the tree) and asked for `--file export.csv` without
+shipping one.
+
+The new README leads with the problem and the five steps, gives two short paths to try
+it, and a full pilot from an empty directory that was executed end to end before being
+written down — including the approvers-first order and `--operator` on every command.
+`examples/export.csv` was added for the import step; the tracked `__pycache__/*.pyc` was
+removed and ignored.
+
+*Mistake worth recording:* `3e26214` was meant to be that change but contained only the
+`.pyc` deletion — a `git add` with a stale pathspec aborted the rest. It was not amended
+or force-pushed (the repo still synced to a generator then); the content landed in
+`d2b7a70`.
+
+### `bd8ad02` — Stop the landing's link rule from painting button labels near-black
+
+`.lp a { color: inherit }` is specificity 0,1,1 and beat shadcn's
+`text-primary-foreground` utility at 0,1,0, so every anchor rendered as a button drew
+`--foreground` on `--primary`: about **1.9:1**, effectively invisible. The hero, the nav
+and the closing CTA were affected; the `Hash this text` control was not, because it is a
+real `<button>`. Fixed by dropping the declaration (preflight already inherits at element
+specificity). Measured after: 6.33:1 primary, 14.39:1 outline.
+
+### `047744e` — Tell a visitor how to test the preview, and give Import a CSV to eat
+
+The site was live but silent about what to click, and the import screen needed an ATS
+export the visitor did not have. The closing section carries three numbered steps;
+`/sample-ats.csv` is a real eight-row export with the exact V2 headers, two rows past the
+initial screen so the filter is demonstrable.
+
+### `18f2f7e` — Make the landing page and the workspace one system
+
+They read as two products: landing serif/16px/46px buttons/9px cards and a bare
+wordmark; workspace sans/14px/36px buttons/7px cards and an indigo tile. The landing's
+own plates were showing a different interface than the page around them. The landing now
+uses the workspace's grammar — shared `BrandMark`, the app's 70px white top bar with the
+`UI preview` pill, the app's sans and 14px base, 10px uppercase micro-labels, the shadcn
+button set, 7px cards — with the hero only a scale step above the app's headings.
+
+### `959950d` — Add a tasteskill pass to the landing page
+
+Run under the design-taste checkers (43 FAIL at 1440), the page gained: an h1 that names
+category and buyer, one hard fact from the fixture, a hero action, sections that fill
+their own screen, one h2 size, hanging list markers on the margin, one button height,
+44px targets at 320, restored focus rings, five real captures of the workspace, a hero
+entrance, hover/press states, and a chain diagram built from the fixture's own entry
+hashes instead of invented ones. **30 FAILs remained** (container grid, one-section
+timing, visuals in three sections, no dealt moment) because closing them needs the kit's
+`.wrap` grid and no hanging margin — i.e. replacing the design, not adding to it.
+
+### `856a35a` — Make the web lint pass, and gate it in CI
+
+`bun run lint` never terminated: the flat config ignored `dist`, `.output` and `.vinxi`
+but not `.vercel`, so ESLint walked the Build Output API bundle and prettier parsed
+thousands of bundled `.mjs`. With the ignore fixed it finished in ~4 s and reported 210
+formatting errors — the app had never been formatted to its own `.prettierrc`. `bun run
+format` fixed them mechanically (byte-identical render proven by screenshot comparison),
+`AGENTS.md`/route docs were excluded rather than reflowed, and the `web` CI job now runs
+lint before tests.
+
+### `fa19dcc` — Add a landing page that explains the pilot and leads into the workspace
+
+`/` was the triage table, which explains nothing to someone who has not been walked
+through the tool. `/` became the explainer; the workspace moved to `/triage`. One live
+action: the sample record's text hashed with WebCrypto, showing the value the log stores
+as `text_digest`.
+
+### `dc1e40b` — Replace the static artefact site with the exported workspace preview
+
+Removed the generated site, its generator (`src/site.rs`, 1,371 lines), `--export-html`,
+`site/`, `vercel.json`, `.vercelignore`, `scripts/build-site.sh`, the CI drift check and
+`pulldown-cmark`; added the exported TanStack Start app under `web/` and pointed the
+Vercel project's Root Directory at it. The seven specification documents were committed
+as removed.
+
+## 2026-11-24
+
+### `90dfcb6` — Add SKILL.md
+
+The project compressed into one file: what it is, seven spec lineages, 32 decisions, the
+invariants with their tests, failure modes, open work.
+
+### `f71d930` — Fix the web findings: XSS sink, CSP, table semantics, a11y and motion
+
+A review pass over the generated site: table rows built with `innerHTML` from
+operator-authored facts (stored XSS), a skip link permanently clipped, `px` body type
+that ignored OS text scaling, smooth scroll and a bulk slide that ignored
+`prefers-reduced-motion`.
+
+### `43c86bf`, `f69e57b` — Product page, live lab, real workspace snapshots
+
+The static site became a product page with an interactive `/lab` that re-hashed the
+canonical payload in the browser, plus `/workspace` snapshots captured from a live
+`ledger ui` run. (All removed later.)
+
+### `7c5326c`, `65b6c22` — Phase 4 start: the local workspace server
+
+`record_batch`, `ArtefactStatus`, `verify_workspace`, the `ui` feature gate, embedded
+assets, axum with token→cookie, RBAC per request and `flock` inside `spawn_blocking`.
+`65b6c22` fixed a CI-only `ConnectionReset`: the test harness dropped the child's stdout
+after reading the banner, and the server's next `println!` hit EPIPE on Linux.
+
+### `3f880a2` — Bind sign-offs to copy, enforce drift, drafted dispatch
+
+Approvals became bound to the copy hash: editing copy makes an approval **stale** (the
+old signature is kept so drift is reportable), re-approval appends, and `.eml` batches
+record `queued` with a per-file SHA-256 manifest instead of claiming delivery.
+
+### `16a1caa` — Verifiable operator identities, signing and RBAC
+
+Ed25519 keypairs at `0600`, three roles enforced per CLI command and per HTTP request,
+signed dispositions, `verify-signatures`, snapshots before mutations.
+
+### `24145c9`, `bb8ee69`, `c7cc82d` — V5 phases 1, 2, 5
+
+MSRV compiled in CI, `0600` fixes, chrono advisory ignored with a review date, coverage
+floors, PII-free backtraces, LICENSE; then retention `purge`, `migrate`, `--json`,
+`anchor`; then reproducible site provenance and the removal of a duplicated deploy
+workflow in favour of the Git integration.
+
+### `3a7a1b9` — Harden the log format, crash safety, and verification (V4)
+
+Canonical digest v2 (sorted keys, no whitespace, integers only, NFC, epoch seconds,
+21-field allowlist), atomic append + fsync + dir fsync, torn-tail detection that refuses
+instead of repairing, `log quarantine`, golden fixtures, `verify_log.py`, `FORMAT_SPEC.md`,
+`THREAT_MODEL.md`, and CI. Resolved four self-contradictions in the spec (recorded in
+`SKILL.md` §5 history).
+
+### `7d8d9be` — V3: deterministic fixture and build-time artefact site
+
+`ledger demo seed [--force] [--record]` producing 151 CSV rows → 150 roster, 12 GATE /
+129 FIELD / 8 ADMIN, 1 missing disposition, 147 sends, 3 blocked, fingerprint
+`64f9e1f9…`, head `d347a639…`. Determinism is asserted by test.
+
+### `acbff64` — V2: the audit-grade rewrite
+
+GATE/FIELD/ADMIN with no free text, versioned gate blocks with fact dependencies, the
+comparative paragraph and its lint, the five-script reply playbook, hard stage filter,
+QA sampling, five metric bands, routing consequences.
+
+### `ec66e4a` — First deployable page
+
+A static Vercel page because the CLI had no web surface. Superseded by every later web
+change and finally removed.
+
+### `d6bf2fa` — v1 pilot
+
+Gate copy, three templates, a locked form, a hash-chained send log, gate blocking, three
+metrics and go/no-go routing.
+
+---
+
+## Removed on purpose
+
+| Removed | When | Why |
+| --- | --- | --- |
+| Generated artefact site + `src/site.rs` | `dc1e40b` | it published HTML nobody ran; the app replaced it |
+| `--export-html`, build-site script, drift check | `dc1e40b` | only existed to serve that site |
+| `pulldown-cmark` | `dc1e40b` | only the site's markdown rendering used it |
+| Seven specification documents | `dc1e40b` | superseded by `SKILL.md`; readable at `90dfcb6` |
+| Generator scaffolding, config package, favicon | `7263d0e` | replaced with plain TanStack Start and a Ledger mark |
+| `.vercelignore`, pre-built deploy workflow | `c7cc82d`, `dc1e40b` | the Git integration deploys `web/` |
+
+## Incidents worth remembering
+
+1. **EPIPE in CI only** — the test harness dropped a child's stdout; Linux panicked on
+   the next write. Fix: hold the reader.
+2. **Drift check unwinnable** — provenance read `HEAD`, so pages at N regenerated as N+1.
+   Fix: provenance is a committed input.
+3. **Sign-offs reported invalid *and* stale** — the signature was checked against the
+   current hash instead of the recorded one. Fix: verify against `artefact_hash`.
+4. **Fixture rejected by its own rule** — the fixture clock was in the machine's future;
+   base time moved to `2026-11-02T09:00Z`.
+5. **Button labels at 1.9:1** — a landing `a` rule outranked a component utility
+   (`bd8ad02`).
+6. **A commit that contained nothing but a `.pyc`** — a failing pathspec aborted
+   `git add`; the intent landed one commit later (`3e26214` → `d2b7a70`).
