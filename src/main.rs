@@ -9,6 +9,7 @@ use clap::{Args, Parser, Subcommand};
 use ledger::approval::SignOffRole;
 use ledger::ats::Roster;
 use ledger::checklist::{Checklist, TASKS};
+use ledger::delivery::DeliveryLog;
 use ledger::disposition::{
     AdminReason, Disposition, DispositionKind, Dispositions, FormSubmission, NewDisposition,
 };
@@ -16,7 +17,7 @@ use ledger::error::{Error, Result};
 use ledger::gate::{FactKey, GateAnswer, GateKind, GateLibrary};
 use ledger::id::{
     ApplicationId, CandidateEmail, DecisionMakerId, DispositionId, Mailbox, QaId, RecruiterId,
-    RequisitionId, TemplateKind, TextVersion,
+    RequisitionId, SendId, TemplateKind, TextVersion,
 };
 use ledger::log::{BlockedLog, DeliveryStatus, SendLog};
 use ledger::metrics::{Metrics, Replies, Reply, Signals};
@@ -95,6 +96,9 @@ enum Command {
     Qa(QaCommand),
     /// Render and dispatch feedback under the circuit-breakers.
     Dispatch(DispatchArgs),
+    /// Confirm a recorded send was delivered, as a new chained event.
+    #[command(subcommand)]
+    Delivery(DeliveryCommand),
     /// Verify or export the send log.
     #[command(subcommand)]
     Log(LogCommand),
@@ -540,6 +544,31 @@ struct DispatchArgs {
 }
 
 #[derive(Debug, Subcommand)]
+enum DeliveryCommand {
+    /// Confirm a recorded send was delivered (appends a chained entry).
+    Confirm(DeliveryConfirmArgs),
+    /// List the delivery-confirmation chain.
+    List(DeliveryListArgs),
+}
+
+#[derive(Debug, Args)]
+struct DeliveryConfirmArgs {
+    /// The send-log id that is now confirmed delivered, e.g. SND-000001.
+    #[arg(long)]
+    send_id: String,
+    /// Print the appended entry as JSON.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Debug, Args)]
+struct DeliveryListArgs {
+    /// Print the chain as JSON.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Debug, Subcommand)]
 enum LogCommand {
     /// Verify the hash chain and print its head.
     Verify(LogVerifyArgs),
@@ -760,6 +789,7 @@ fn run(store: &Store, command: Command, explicit_operator: Option<&str>) -> Resu
         Command::Disposition(command) => disposition(store, command, explicit_operator, &registry),
         Command::Qa(command) => qa(store, command),
         Command::Dispatch(args) => dispatch_command(store, &args),
+        Command::Delivery(command) => delivery_command(store, command, &actor),
         Command::Log(command) => log(store, command),
         Command::Reply(ReplyCommand::Record(args)) => reply_record(store, &args),
         Command::Signal(SignalCommand::Record(args)) => signal_record(store, &args),
@@ -808,6 +838,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Disposition(_) => "disposition",
         Command::Qa(_) => "qa",
         Command::Dispatch(_) => "dispatch",
+        Command::Delivery(_) => "delivery",
         Command::Log(_) => "log",
         Command::Reply(_) => "reply",
         Command::Signal(_) => "signal",
@@ -1813,6 +1844,73 @@ fn dispatch_command(store: &Store, args: &DispatchArgs) -> Result<()> {
     Ok(())
 }
 
+fn delivery_command(store: &Store, command: DeliveryCommand, actor: &Actor<'_>) -> Result<()> {
+    match command {
+        DeliveryCommand::Confirm(args) => {
+            let send_id = SendId::try_from(args.send_id.as_str())?;
+            let operator = actor.operator.ok_or_else(|| {
+                Error::invalid(
+                    "operator",
+                    "register an operator first: `ledger operator register --name <name> --role <role>`",
+                )
+            })?;
+            let sends = SendLog::open(store)?;
+            let mut deliveries = DeliveryLog::open(store)?;
+            let entry = deliveries.confirm(
+                &sends,
+                &send_id,
+                &operator.name,
+                &operator.public_key,
+                Utc::now(),
+            )?;
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&entry)?);
+            } else {
+                println!(
+                    "confirmed {} delivered by {} at {}",
+                    entry.send_id,
+                    entry.confirmed_by,
+                    entry.confirmed_at.format(STAMP)
+                );
+                println!(
+                    "delivery chain: {} entr{}, head {}",
+                    entry.seq + 1,
+                    if entry.seq == 0 { "y" } else { "ies" },
+                    entry.entry_hash
+                );
+                println!("send log unchanged: the confirmation is a new chained entry");
+            }
+            Ok(())
+        }
+        DeliveryCommand::List(args) => {
+            let deliveries = DeliveryLog::open(store)?;
+            let entries = deliveries.entries()?;
+            if args.json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "entries": entries.len(),
+                        "confirmations": entries,
+                    })
+                );
+            } else if entries.is_empty() {
+                println!("no delivery confirmations recorded");
+            } else {
+                for entry in &entries {
+                    println!(
+                        "{}  {}  {}  by {}",
+                        entry.send_id,
+                        entry.confirmed_at.format(STAMP),
+                        entry.seq,
+                        entry.confirmed_by
+                    );
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
 fn demo_seed(store: &Store, args: &DemoSeedArgs) -> Result<()> {
     let summary = ledger::demo::seed(store, args.force, args.record)?;
     if args.json {
@@ -2109,7 +2207,14 @@ fn compute_metrics(store: &Store, id: &RequisitionId) -> Result<Metrics> {
         .cloned()
         .collect();
     let signals = Signals::open(store).for_requisition(id)?;
-    Ok(Metrics::compute(&sends, &replies, &blocked, &signals))
+    let confirmations = DeliveryLog::open(store)?.entries()?;
+    Ok(Metrics::compute(
+        &sends,
+        &replies,
+        &blocked,
+        &signals,
+        &confirmations,
+    ))
 }
 
 fn review(store: &Store, command: ReviewCommand) -> Result<()> {
@@ -2324,6 +2429,7 @@ fn read_only_core(command: &Command) -> bool {
             | Command::Playbook(PlaybookCommand::Show | PlaybookCommand::Script(_))
             | Command::Disposition(DispositionCommand::List(_) | DispositionCommand::History(_))
             | Command::Qa(QaCommand::List(_))
+            | Command::Delivery(DeliveryCommand::List(_))
             | Command::Log(LogCommand::Verify(_) | LogCommand::Export(_))
             | Command::Metrics(_)
             | Command::Review(ReviewCommand::Route(_))

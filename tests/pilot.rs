@@ -334,7 +334,7 @@ impl Pilot {
         let signals = Signals::open(&self.store)
             .for_requisition(&self.requisition.id)
             .expect("signals");
-        Metrics::compute(&sends, &replies, &blocked, &signals)
+        Metrics::compute(&sends, &replies, &blocked, &signals, &[])
     }
 
     fn entries(&self) -> Vec<ledger::log::SendEntry> {

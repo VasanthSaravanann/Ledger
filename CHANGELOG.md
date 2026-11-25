@@ -29,6 +29,25 @@ what was tried, what was removed on purpose, and the mistakes worth not repeatin
 
 ## 2026-11-25
 
+### P0-1 Record delivery confirmation as a chained event
+
+The send log recorded `queued` and then nothing ever moved a draft to `sent`: the
+"confirmed sent" number could not be non-zero, and the log could not prove anything
+arrived. The status in a send entry is fixed when it is written, so the later fact got
+its own chain. `delivery.jsonl` holds `DELIVERY_CONFIRMED` entries — `send_id`,
+`confirmed_by`, that operator's Ed25519 public key, `confirmed_at`, `seq`,
+`prev_hash`, `entry_hash` — chained and verified under the rules already used for the
+send log. `ledger delivery confirm --send-id …` appends one; `ledger delivery list`
+shows them; `ledger metrics` now reports `confirmed` against `queued`, where a
+confirmation wins over the status recorded at dispatch.
+
+What must not move did not move: a workspace that never confirms keeps a byte-identical
+send log, and the fixture's head `d347a639…` and fingerprint `64f9e1f9…` are still
+pinned by `tests/golden.rs`. The new goldens pin the queued send's bytes
+(`626b75e9…`) and the first confirmation's hash (`777907a6…`), and assert that
+confirming changes no send-log byte. `FORMAT_SPEC.md` §11 is the normative payload;
+`verify_log.py` still covers the send log alone, and says so.
+
 ### `af29e3b` — Split the docs into an operating manual, a complete log, and a production plan
 
 `SKILL.md` had grown into a history: 32 decisions, seven spec lineages, an open-work

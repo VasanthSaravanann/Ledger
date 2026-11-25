@@ -1,12 +1,13 @@
 {
   "version": 1,
-  "updated": "2026-11-25T03:37:54.595Z",
+  "updated": "2026-11-25T04:08:22.107Z",
   "tasks": {
     "P0-1": {
-      "status": "todo",
-      "attempts": 0,
-      "commit": null,
-      "note": null
+      "status": "done",
+      "attempts": 1,
+      "commit": "8a8d8b6",
+      "note": "gate green",
+      "signed_by": null
     },
     "P0-2": {
       "status": "todo",
@@ -117,5 +118,13 @@
       "note": null
     }
   },
-  "log": []
+  "log": [
+    {
+      "at": "2026-11-25T04:08:22.107Z",
+      "id": "P0-1",
+      "event": "done",
+      "commit": "8a8d8b6",
+      "signed_by": null
+    }
+  ]
 }

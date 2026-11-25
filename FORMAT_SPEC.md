@@ -1,7 +1,8 @@
 # Ledger on-disk format and digest specification
 
 **Version:** `digest_version = 2`, `schema_version = 1`
-**Status:** implemented for the send log; state documents are unversioned (see §9).
+**Status:** implemented for the send log and the delivery-confirmation log; state
+ documents are unversioned (see §10).
 
 This document is normative. `verify_log.py` and the Rust implementation are both
 written against it, and the golden fixtures in `tests/golden.rs` pin it.
@@ -14,15 +15,17 @@ Two artefacts are covered here:
 
 1. `send_log.jsonl` — the append-only, hash-chained log of dispatched emails. This
    is the evidentiary artefact.
-2. The JSON state documents in the workspace (`gate_library.json`,
+2. `delivery.jsonl` — the append-only, hash-chained log of delivery confirmations
+   (§11). It never edits a send entry; it records a later fact about one.
+3. The JSON state documents in the workspace (`gate_library.json`,
    `templates.json`, `playbook.json`, `requisitions.json`, `policy.json`,
    `review.json`, `checklist.json`, `demo-summary.json`) and the append-only logs
    (`dispositions.jsonl`, `qa.jsonl`, `blocked.jsonl`, `replies.jsonl`,
    `signals.jsonl`, plus `operator.jsonl` when present).
 
-Only the send log carries a hash chain. The other files are append-only by
-construction (there is no update or delete path in the code) but are not
-individually chained.
+Only the send log and the delivery log carry a hash chain. The other files are
+append-only by construction (there is no update or delete path in the code) but
+are not individually chained.
 
 ## 2. Text encoding
 
@@ -168,6 +171,46 @@ Honest list, so the spec is not mistaken for more than it is:
    not chained; each line is plain JSON with no digest.
 3. `operator.jsonl` exists for `log quarantine` only; the other mutating commands
    are not yet written to it.
-4. The chain is a local file. Anyone with write access to the directory can replace
+4. `delivery.jsonl` is verified by this crate but not yet by `verify_log.py`; the
+   independent verifier covers the send log alone.
+5. The chain is a local file. Anyone with write access to the directory can replace
    the whole file with a re-chained forgery; only off-host replication closes that.
    See `THREAT_MODEL.md`.
+
+## 11. Delivery confirmations (`delivery.jsonl`)
+
+A send entry's `DELIVERY_STATUS` is fixed when it is written: the chain cannot be
+edited. A later fact — the mail provider accepted the draft — is therefore a new
+chained entry in `delivery.jsonl`, never an edit of `send_log.jsonl`.
+
+- Entry type: `"type": "DELIVERY_CONFIRMED"`.
+- The chaining rules of §6 and the framing rules of §7 apply unchanged, with these
+  differences: the chain is `delivery.jsonl`; `confirmed_at` is non-decreasing along
+  the chain; a `SEND_ID` may appear at most once; and a confirmation may only be
+  appended for a `SEND_ID` that exists in `send_log.jsonl`, with
+  `confirmed_at >= SEND_TIMESTAMP`.
+- `entry_hash = lowercase_hex(SHA-256(canonical_bytes(payload)))`, where `payload`
+  is the canonical object containing exactly:
+
+| Field | Type | Encoding |
+| --- | --- | --- |
+| `digest_version` | integer | always `2` |
+| `seq` | integer | zero-based chain position in `delivery.jsonl` |
+| `prev_hash` | string | 64 lowercase hex chars, or the genesis constant |
+| `type` | string | always `DELIVERY_CONFIRMED` |
+| `send_id` | string | `SND-` + six digits, present in `send_log.jsonl` |
+| `confirmed_by` | string | the operator's registered name |
+| `confirmed_by_key` | string | that operator's Ed25519 public key, lowercase hex |
+| `confirmed_at` | integer | epoch **seconds**, UTC |
+
+- Excluded, as in §4: `entry_hash` is the output. This log has no
+  `schema_version` field yet; an unknown `type` fails closed instead.
+- Digest coverage is again **values, not layout**: reordering keys verifies, editing
+  any covered value fails.
+- **The effective status** of a send is `sent` when a confirmation exists for its
+  `SEND_ID`, otherwise the `delivery_status` recorded in the send entry. `queued`
+  therefore means "recorded, not yet confirmed", and only a confirmation can move a
+  send out of it.
+- A workspace that records no confirmations has an empty or absent
+  `delivery.jsonl`, and its send log is byte-for-byte what it was before this log
+  existed. `tests/golden.rs` pins the head and bytes of both states.

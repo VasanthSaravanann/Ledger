@@ -6,11 +6,13 @@
 //! data arrived.
 
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::fmt;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::delivery::{DeliveryConfirmation, effective_status};
 use crate::error::{Error, Result};
 use crate::id::RequisitionId;
 use crate::jsonl::AppendLog;
@@ -260,6 +262,11 @@ pub fn rate_candidate_value(yes_share: f64) -> Rating {
 pub struct Metrics {
     /// Emails dispatched (any delivery status).
     pub sends: u64,
+    /// Sends a reader may believe were delivered: recorded `sent` at dispatch, or
+    /// confirmed by a chained `DELIVERY_CONFIRMED` entry.
+    pub confirmed: u64,
+    /// Sends still waiting for a confirmation, so never called `sent`.
+    pub queued: u64,
     /// Replies received.
     pub replies: u64,
     /// Sends refused by a circuit-breaker.
@@ -302,8 +309,20 @@ impl Metrics {
         replies: &[Reply],
         blocked: &[BlockedAttempt],
         signals: &[Signal],
+        confirmations: &[DeliveryConfirmation],
     ) -> Self {
         let send_count = sends.len() as u64;
+        let confirmed_ids: BTreeSet<&crate::id::SendId> =
+            confirmations.iter().map(|entry| &entry.send_id).collect();
+        let mut confirmed = 0_u64;
+        let mut queued = 0_u64;
+        for entry in sends {
+            match effective_status(entry, confirmed_ids.contains(&entry.send_id)) {
+                DeliveryStatus::Sent => confirmed += 1,
+                DeliveryStatus::Queued => queued += 1,
+                DeliveryStatus::Failed => {}
+            }
+        }
         let reply_count = replies.len() as u64;
         let blocked_count = blocked.len() as u64;
         let gate_sends = sends
@@ -349,6 +368,8 @@ impl Metrics {
 
         Self {
             sends: send_count,
+            confirmed,
+            queued,
             replies: reply_count,
             blocked: blocked_count,
             gate_sends,
@@ -379,6 +400,8 @@ impl Metrics {
 impl fmt::Display for Metrics {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(formatter, "sends:              {}", self.sends)?;
+        writeln!(formatter, "confirmed:          {}", self.confirmed)?;
+        writeln!(formatter, "queued:             {}", self.queued)?;
         writeln!(formatter, "replies:            {}", self.replies)?;
         writeln!(formatter, "blocked:            {}", self.blocked)?;
         writeln!(formatter, "gate sends:         {}", self.gate_sends)?;
@@ -436,6 +459,8 @@ mod tests {
         };
         Metrics {
             sends,
+            confirmed: sends,
+            queued: 0,
             replies,
             blocked,
             gate_sends: gate,
@@ -479,9 +504,11 @@ mod tests {
 
     #[test]
     fn empty_evidence_has_no_candidate_value_rating() {
-        let metrics = Metrics::compute(&[], &[], &[], &[]);
+        let metrics = Metrics::compute(&[], &[], &[], &[], &[]);
         assert_eq!(metrics.reply_volume_per_1000, 0.0);
         assert_eq!(metrics.form_block_rate, 0.0);
+        assert_eq!(metrics.confirmed, 0);
+        assert_eq!(metrics.queued, 0);
         assert!(metrics.candidate_value_yes_share.is_none());
         assert!(metrics.ratings.candidate_value.is_none());
     }
@@ -512,7 +539,7 @@ mod tests {
                 at: Utc::now(),
             },
         ];
-        let metrics = Metrics::compute(&[], &[], &[], &signals);
+        let metrics = Metrics::compute(&[], &[], &[], &signals, &[]);
         assert_eq!(metrics.candidate_value_yes_share, Some(1.0 / 3.0));
         assert_eq!(metrics.ratings.candidate_value, Some(Rating::Amber));
     }

@@ -40,8 +40,8 @@ hosted tenancy, no Windows binary, no generated static site.
 
 - Rust 2024, MSRV **1.85** (compiled in CI), 11 direct crates, **no network crates** in
   the default graph. Optional `ui` feature adds axum + tokio.
-- 33 modules, ~14.7k lines, **136 tests** (144 with `--features ui`).
-- 25 top-level CLI commands; `--json` on 11 of them.
+- 34 modules, ~15.2k lines, **143 tests** (151 with `--features ui`).
+- 26 top-level CLI commands; `--json` on 13 of them.
 - Web: 6 routes, 6 tests, eslint 0 errors (7 known `react-refresh` warnings).
 - Deployed at **https://ledger-pilot-chi.vercel.app** from `web/` on every push to
   `main`; CI runs `test`, `msrv`, `web`, `supply-chain`, `coverage`, plus weekly
@@ -54,7 +54,7 @@ hosted tenancy, no Windows binary, no generated static site.
 | --- | --- |
 | `src/main.rs` | CLI (clap); the only place RBAC and the workspace lock are applied |
 | `src/store.rs`, `src/jsonl.rs` | workspace directory, atomic writes, `flock`, `0600`/`0700`, append-only logs, torn-tail detection |
-| `src/digest.rs`, `src/log.rs` | canonical encoder, SHA-256, hash chain, schema version, monotonic verify |
+| `src/digest.rs`, `src/log.rs`, `src/delivery.rs` | canonical encoder, SHA-256, hash chain, schema version, monotonic verify, the chained delivery confirmation |
 | `src/disposition.rs`, `src/gate.rs`, `src/requisition.rs` | locked form, five versioned knockouts with fact dependencies, paragraph lint |
 | `src/pipeline.rs`, `src/qa.rs`, `src/ats.rs` | three circuit-breakers, second-person sampling, CSV import + hard filter |
 | `src/identity.rs`, `src/approval.rs`, `src/verify.rs` | Ed25519 operators, hash-bound sign-off and drift, workspace verification |
@@ -78,7 +78,9 @@ hosted tenancy, no Windows binary, no generated static site.
    text; corrections supersede, never overwrite.
 4. **Second-person QA**: 100% of `GATE`, deterministic 10% of `FIELD`/`ADMIN`.
 5. **Render then chain**: RFC 5322 draft, one chained entry per send, recorded
-   `queued` — never `sent` without a human confirmation.
+   `queued` — never `sent` without a human confirmation, which is itself a new
+   chained `DELIVERY_CONFIRMED` entry in `delivery.jsonl`, never an edit of the send
+   entry.
 
 Breakers: completeness, gate consistency (never auto-corrected), version resolution.
 Exit codes: `0` ok · `1` internal/IO · `2` blocked · `3` invalid state (incl. torn
@@ -125,6 +127,7 @@ tail) · `4` lock contention.
 | A torn tail refuses, never repairs | `AppendLog::read_all` |
 | Capture precedes send; sends never go backwards | `verify_chain` + golden fixtures |
 | Sign-offs cannot be inherited by edited copy | `content_hash` + `Approval::is_bound_to` |
+| A delivery status changes only by appending a confirmation | `DeliveryLog::confirm`, `effective_status` |
 | Roles gate commands and requests | `Role::permits` at CLI and HTTP |
 | One writer per workspace | `Store::lock` (flock) |
 | The fixture is reproducible | fixed clock, derived keys → `64f9e1f9…`, head `d347a639…` |

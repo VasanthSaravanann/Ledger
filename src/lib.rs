@@ -12,7 +12,8 @@
 //!   hard initial-screen filter.
 //! - [`disposition`] also carries corrections: a new record `SUPERSEDES` the old.
 //! - [`qa`] records the second-person check and draws the deterministic 10% sample.
-//! - [`log`] is the append-only, hash-chained send log and the blocked log.
+//! - [`log`] is the append-only, hash-chained send log and the blocked log;
+//! - [`delivery`] chains the later fact that a recorded send was actually delivered.
 //! - [`pipeline`] is the gate-blocking protocol that refuses to send without a
 //!   completed disposition, a matching answer, and a recorded QA check.
 //! - [`metrics`] and [`review`] are the five pre-registered metrics and the v2
@@ -28,6 +29,7 @@ pub mod approval;
 pub mod assets;
 pub mod ats;
 pub mod checklist;
+pub mod delivery;
 pub mod demo;
 pub mod digest;
 pub mod disposition;

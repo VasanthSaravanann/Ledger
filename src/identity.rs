@@ -60,6 +60,7 @@ impl Role {
                     | "disposition"
                     | "qa"
                     | "dispatch"
+                    | "delivery"
                     | "reply"
                     | "signal"
                     | "anchor"

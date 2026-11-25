@@ -167,3 +167,170 @@ fn the_chain_head_and_verifier_agree_after_a_restore() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+// ---------------------------------------------------------------------------------
+// Delivery confirmation (P0-1)
+//
+// A queued draft becomes `confirmed` only by appending a DELIVERY_CONFIRMED entry
+// to its own chain. The send log stays byte-for-byte identical, so every head this
+// repository has published remains valid.
+
+/// The first confirmation's `entry_hash` in `queued_fixture`.
+const DELIVERY_HEAD: &str = "777907a6079faa1e836943137ffc2b6943184c85d95ca745bfa2df268f08b986";
+
+/// The queued send log's bytes, before and after its confirmation.
+const QUEUED_SEND_LOG_SHA256: &str =
+    "626b75e9662c441bb49cbb18df74de713db4844cffd35fd2c4561010182a57d5";
+
+fn at(minute: u32) -> chrono::DateTime<chrono::Utc> {
+    use chrono::TimeZone;
+    chrono::Utc
+        .with_ymd_and_hms(2026, 11, 24, 9, minute, 0)
+        .single()
+        .expect("timestamp")
+}
+
+fn queued_fixture(tag: &str) -> (Store, PathBuf) {
+    use ledger::disposition::{Disposition, DispositionRecord, NewDisposition};
+    use ledger::gate::{GateAnswer, GateKind};
+    use ledger::id::{ApplicationId, CandidateEmail, DispositionId};
+    use ledger::log::{DeliveryStatus, SendDraft, SendLog};
+    use ledger::requisition::{Requisition, RequisitionDraft, Sender};
+    use ledger::template::RenderedEmail;
+    use std::collections::BTreeMap;
+
+    let dir = std::env::temp_dir().join(format!(
+        "ledger-golden-delivery-{tag}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    let store = Store::open(&dir).expect("workspace");
+
+    let requisition = Requisition::new(
+        RequisitionDraft {
+            id: ledger::id::RequisitionId::try_from("REQ-1").expect("id"),
+            employer: "Example Health".to_owned(),
+            title: "Registered Nurse".to_owned(),
+            reply_to: ledger::id::Mailbox::try_from("careers-feedback@example.com.au")
+                .expect("mailbox"),
+            sender: Sender::try_new("R. Patel", "Coordinator").expect("sender"),
+            gates: vec![GateKind::RightToWork],
+            facts: BTreeMap::new(),
+        },
+        at(0),
+    )
+    .expect("requisition");
+    let form = NewDisposition::try_new(
+        &requisition,
+        &ledger::gate::GateLibrary::seed(),
+        ledger::disposition::FormSubmission {
+            application_id: ApplicationId::try_from("APP-1").expect("application"),
+            candidate_first_name: "Ada".to_owned(),
+            candidate_email: CandidateEmail::try_from("ada@example.com").expect("email"),
+            recruiter: ledger::id::RecruiterId::try_from("rec-rui").expect("recruiter"),
+            decision_maker: ledger::id::DecisionMakerId::try_from("dm-chen").expect("dm"),
+            disposition: Disposition::Gate {
+                gate: GateKind::RightToWork,
+                answer: GateAnswer::NotHeld,
+            },
+            supersedes: None,
+        },
+        at(1),
+    )
+    .expect("form");
+    let disposition = DispositionRecord {
+        id: DispositionId::try_from("DSP-0001").expect("id"),
+        locked: true,
+        form,
+    };
+
+    let mut log = SendLog::open(&store).expect("send log");
+    log.append(
+        SendDraft {
+            disposition,
+            text_version: ledger::id::TextVersion::parse("v1.0").expect("version"),
+            rendered: RenderedEmail {
+                subject: "Update on your application".to_owned(),
+                body: "Dear Ada,\n\nYou indicated ...".to_owned(),
+            },
+            delivery_status: DeliveryStatus::Queued,
+        },
+        at(2),
+    )
+    .expect("queued send");
+    (store, dir)
+}
+
+#[test]
+fn a_confirmation_moves_a_queued_send_to_confirmed_without_touching_the_send_log() {
+    use ledger::delivery::DeliveryLog;
+    use ledger::id::SendId;
+    use ledger::log::SendLog;
+    use ledger::metrics::Metrics;
+
+    let (store, dir) = queued_fixture("queued");
+    let send_log = SendLog::open(&store).expect("send log");
+    let sends = send_log.entries().expect("entries");
+    assert_eq!(
+        sha_of(&store, store::SEND_LOG),
+        QUEUED_SEND_LOG_SHA256,
+        "the queued send's bytes moved"
+    );
+
+    let before = Metrics::compute(&sends, &[], &[], &[], &[]);
+    assert_eq!(before.sends, 1);
+    assert_eq!((before.confirmed, before.queued), (0, 1));
+
+    let mut deliveries = DeliveryLog::open(&store).expect("delivery log");
+    assert!(deliveries.is_empty(), "nothing is confirmed yet");
+    let send_id = SendId::try_from("SND-000001").expect("send id");
+    let entry = deliveries
+        .confirm(&send_log, &send_id, "M. Okafor", &"ab".repeat(32), at(3))
+        .expect("confirm");
+    assert_eq!(entry.entry_hash, DELIVERY_HEAD, "delivery chain head moved");
+    assert_eq!(
+        sha_of(&store, store::SEND_LOG),
+        QUEUED_SEND_LOG_SHA256,
+        "confirming changed a send-log byte"
+    );
+
+    let confirmations = deliveries.entries().expect("confirmations");
+    let after = Metrics::compute(&sends, &[], &[], &[], &confirmations);
+    assert_eq!((after.confirmed, after.queued), (1, 0));
+    assert_eq!(
+        DeliveryLog::open(&store)
+            .expect("reopen")
+            .verification()
+            .expect("verifies")
+            .head,
+        DELIVERY_HEAD
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_demo_fixture_reports_its_recorded_sends_as_confirmed() {
+    use ledger::delivery::DeliveryLog;
+    use ledger::log::SendLog;
+    use ledger::metrics::Metrics;
+
+    let (store, dir) = seeded("delivery-metrics");
+    let sends = SendLog::open(&store)
+        .expect("send log")
+        .entries()
+        .expect("entries");
+    let metrics = Metrics::compute(&sends, &[], &[], &[], &[]);
+    assert_eq!(metrics.sends, SENDS as u64);
+    assert_eq!((metrics.confirmed, metrics.queued), (SENDS as u64, 0));
+    assert!(
+        DeliveryLog::open(&store).expect("delivery log").is_empty(),
+        "the fixture keeps the head it published: no confirmation was needed"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}

@@ -362,6 +362,8 @@ mod tests {
     fn metrics(reply: Rating, block: Rating, mismatch: Rating, value: Option<Rating>) -> Metrics {
         Metrics {
             sends: 100,
+            confirmed: 100,
+            queued: 0,
             replies: 5,
             blocked: 10,
             gate_sends: 20,
